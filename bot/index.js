@@ -21,6 +21,19 @@ if (!MINI_APP_URL || !MINI_APP_URL.startsWith('https://')) {
 
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
+// Telegram кэширует Mini App очень агрессивно по точному URL — обновление
+// public/admin.html на хостинге само по себе не гарантирует, что открытая
+// через кнопку страница подтянет новую версию. Добавляем меняющийся
+// параметр ?v=..., чтобы каждый перезапуск бота (после деплоя новой версии
+// страницы) и каждое нажатие /start открывали заведомо "новый" для Telegram
+// URL и не показывали старый кэш.
+function withCacheBust(url, version) {
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}v=${version}`;
+}
+
+const startupVersion = Date.now();
+
 bot.setMyCommands([
   { command: 'admin', description: 'Открыть админ-панель' },
   { command: 'help', description: 'Что умеет этот бот' }
@@ -28,14 +41,14 @@ bot.setMyCommands([
 
 // Кнопка синего меню рядом с полем ввода — тоже сразу открывает Mini App
 bot.setChatMenuButton({
-  menu_button: { type: 'web_app', text: 'Админ-панель', web_app: { url: MINI_APP_URL } }
+  menu_button: { type: 'web_app', text: 'Админ-панель', web_app: { url: withCacheBust(MINI_APP_URL, startupVersion) } }
 }).catch((err) => console.error('setChatMenuButton failed:', err.message));
 
 function sendAdminButton(chatId) {
   return bot.sendMessage(chatId, 'Открой панель управления БАТТЛ. Доступ проверяется по твоей роли в базе — если её ещё не выдали, страница сама покажет «доступ запрещён».', {
     reply_markup: {
       inline_keyboard: [[
-        { text: '🛠 Открыть админ-панель', web_app: { url: MINI_APP_URL } }
+        { text: '🛠 Открыть админ-панель', web_app: { url: withCacheBust(MINI_APP_URL, Date.now()) } }
       ]]
     }
   });
