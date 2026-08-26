@@ -400,8 +400,9 @@
   // Каталог значков (эмодзи + название) хранится в badgeDefs/<badgeId>,
   // выданные конкретному игроку — в users/<key>/badges/<badgeId>: true.
   // Показываются в профиле игрока на основном сайте.
+  let badgeDefsReadyPromise = null;
   function loadBadgeDefs() {
-    return db.ref('badgeDefs').once('value').then((snap) => {
+    badgeDefsReadyPromise = db.ref('badgeDefs').once('value').then((snap) => {
       let defs = snap.val();
       if (!defs) {
         return db.ref('badgeDefs').push({ emoji: '🧪', label: 'Альфа-тест', createdAt: Date.now() })
@@ -411,6 +412,7 @@
       badgeDefsCache = defs;
       return defs;
     });
+    return badgeDefsReadyPromise;
   }
 
   function renderUserBadgesSection(userKey, userBadges) {
@@ -446,7 +448,8 @@
     op.then(() => {
       logAction(isAwarded ? 'badge_revoked' : 'badge_given', userKey, targetName, targetPlayerId, def?.label || badgeId);
       return db.ref('users/' + userKey + '/badges').once('value');
-    }).then((snap) => renderUserBadgesSection(userKey, snap.val()));
+    }).then((snap) => renderUserBadgesSection(userKey, snap.val()))
+      .catch((err) => { console.error(err); alert('Не удалось изменить значок'); });
   }
 
   document.getElementById('btn-create-badge').addEventListener('click', () => {
@@ -459,11 +462,14 @@
     db.ref('badgeDefs').push({ emoji, label, createdAt: Date.now() }).then((ref) => {
       emojiInput.value = '';
       labelInput.value = '';
-      logAction('badge_created', foundUserKey, label, ref.key, 'Новый значок в каталоге');
+      // цель записи в журнале — сам новый значок (каталог общий, не привязан
+      // к игроку), а не тот игрок, чья карточка случайно сейчас открыта
+      logAction('badge_created', ref.key, label, ref.key, 'Новый значок в каталоге');
       return loadBadgeDefs();
     }).then(() => {
       return db.ref('users/' + foundUserKey + '/badges').once('value');
-    }).then((snap) => renderUserBadgesSection(foundUserKey, snap.val()));
+    }).then((snap) => renderUserBadgesSection(foundUserKey, snap.val()))
+      .catch((err) => { console.error(err); alert('Не удалось создать значок'); });
   });
 
   function openUserDetail(userKey, user) {
@@ -484,7 +490,10 @@
       `<div class="admin-empty" style="padding:4px 0 0;">Текущий уровень: <strong>${ROLE_LABELS[role] || role}</strong>. Роли меняются только вручную через Firebase Console.</div>`;
 
     renderStatusBadge(user);
-    renderUserBadgesSection(userKey, user.badges || {});
+    // ждём, пока каталог значков (badgeDefsCache) хотя бы раз загрузится —
+    // иначе если карточку открыли быстрее, чем отработал loadBadgeDefs() при
+    // входе, уже выданные значки этого игрока пропадут из вида
+    (badgeDefsReadyPromise || Promise.resolve()).then(() => renderUserBadgesSection(userKey, user.badges || {}));
 
     const editable = canEditStats();
     const stats = user.stats || {};
@@ -526,7 +535,6 @@
 
   // ===== журнал действий =====
   const ACTION_LABELS = {
-    role_change: 'Изменение роли', points_reset: 'Обнуление очков', points_given: 'Начисление очков',
     stats_change: 'Изменение статистики', ban_temp: 'Временный бан', ban_forever: 'Бан навсегда', unban: 'Снятие бана',
     badge_given: 'Выдан значок', badge_revoked: 'Снят значок', badge_created: 'Создан новый значок'
   };
