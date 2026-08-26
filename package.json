@@ -1,0 +1,14 @@
+{
+  "name": "battle-admin-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Telegram-бот, открывающий Mini App админ-панель для проекта БАТТЛ",
+  "main": "bot/index.js",
+  "scripts": {
+    "start": "node bot/index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "node-telegram-bot-api": "^0.66.0"
+  }
+}

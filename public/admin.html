@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>БАТТЛ — Админ-панель</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0B0B0D;
+    --panel: #17171B;
+    --panel-2: #1F1F24;
+    --line: #2A2A30;
+    --text: #F2F1EE;
+    --muted: #8A8A92;
+    --live: #FF3D2E;
+    --live-dark: #B01F16;
+    --gold: #F2B705;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; min-height:100%; -webkit-font-smoothing:antialiased; }
+  body{ display:flex; justify-content:center; padding:16px 0 40px; }
+  .wrap{ width:100%; max-width:460px; padding:0 16px; }
+
+  .topbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+  .brand{ font-family:'Bebas Neue',sans-serif; font-size:22px; letter-spacing:2px; }
+  .brand span{ color:var(--live); }
+  .me{ font-size:11px; color:var(--muted); text-align:right; line-height:1.4; }
+  .me b{ color:var(--text); font-weight:600; }
+
+  .tabs{ display:flex; gap:6px; background:var(--panel-2); padding:4px; border-radius:12px; margin-bottom:16px; }
+  .tab{ flex:1; text-align:center; padding:9px 0; font-size:13px; font-weight:600; border-radius:9px; cursor:pointer; color:var(--muted); user-select:none; }
+  .tab.active{ background:var(--panel); color:var(--text); }
+
+  .screen{ display:none; }
+  .screen.active{ display:block; }
+
+  .center-msg{ min-height:60vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:32px 12px; }
+  .center-msg .big{ font-family:'Bebas Neue',sans-serif; font-size:26px; letter-spacing:1px; margin-bottom:10px; }
+  .center-msg .small{ color:var(--muted); font-size:13.5px; line-height:1.5; max-width:280px; }
+  .center-msg.denied .big{ color:var(--live); }
+
+  .section-label{ font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--muted); margin:18px 0 10px; }
+  .section-label:first-child{ margin-top:0; }
+
+  .admin-search{ display:flex; gap:8px; margin-bottom:14px; }
+  .admin-search input{ flex:1; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; color:var(--text); font-size:14px; font-family:'Inter',sans-serif; min-width:0; }
+  .admin-search input::placeholder{ color:var(--muted); }
+  .admin-search button{ background:var(--gold); color:#0B0B0D; border:none; border-radius:12px; padding:0 18px; font-family:'Bebas Neue',sans-serif; font-size:14px; letter-spacing:1px; cursor:pointer; }
+
+  button{ font-family:inherit; }
+
+  .list-toggle{ width:100%; margin-bottom:16px; background:var(--panel); border:1.5px solid var(--line); color:var(--text); border-radius:14px; padding:13px 14px; font-family:'Inter',sans-serif; font-size:13px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:space-between; }
+  .count-badge{ display:inline-flex; min-width:24px; height:24px; padding:0 7px; align-items:center; justify-content:center; border-radius:999px; background:var(--panel-2); border:1px solid var(--line); color:var(--gold); font-size:11px; margin-left:9px; }
+  .chevron{ font-size:16px; transition:transform .18s ease; }
+
+  .admin-empty{ text-align:center; color:var(--muted); font-size:13px; padding:20px 0; }
+
+  .user-row{ display:flex; align-items:center; gap:12px; padding:10px 12px; background:var(--panel); border:1px solid var(--line); border-radius:12px; cursor:pointer; margin-bottom:8px; }
+  .user-row .u-avatar{ width:36px; height:36px; border-radius:50%; background:var(--panel-2); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-family:'Bebas Neue',sans-serif; font-size:13px; flex-shrink:0; position:relative; background-size:cover; background-position:center; }
+  .user-row .u-online-dot{ position:absolute; bottom:-1px; right:-1px; width:10px; height:10px; border-radius:50%; background:#3ED598; border:2px solid var(--panel); display:none; }
+  .user-row.online .u-online-dot{ display:block; }
+  .user-row .u-info{ flex:1; min-width:0; }
+  .user-row .u-name{ font-size:13.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .user-row .u-id{ font-size:11.5px; color:var(--muted); }
+  .u-role-badge{ font-size:10px; letter-spacing:0.5px; text-transform:uppercase; padding:3px 8px; border-radius:100px; flex-shrink:0; }
+  .u-role-badge.role-user{ background:var(--panel-2); color:var(--muted); }
+  .u-role-badge.role-moderator{ background:rgba(108,124,255,0.15); color:#6C7CFF; }
+  .u-role-badge.role-admin{ background:rgba(255,61,46,0.15); color:var(--live); }
+  .u-role-badge.role-superadmin{ background:rgba(242,183,5,0.15); color:var(--gold); }
+
+  .badge{ display:inline-block; font-size:10px; letter-spacing:0.5px; text-transform:uppercase; padding:2px 7px; border-radius:100px; }
+  .badge.live{ background:rgba(255,61,46,0.15); color:var(--live); }
+
+  .admin-result{ background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; display:none; margin-top:4px; }
+  .admin-result .r-avatar{ width:56px; height:56px; border-radius:50%; background:var(--panel-2); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-family:'Bebas Neue',sans-serif; font-size:18px; margin-bottom:12px; background-size:cover; background-position:center; }
+  .admin-result .r-name{ font-size:15px; font-weight:700; margin-bottom:2px; }
+  .admin-result .r-id{ font-size:12.5px; color:var(--muted); margin-bottom:14px; }
+  .r-toggle-row{ display:flex; flex-direction:column; align-items:stretch; gap:10px; padding-top:12px; border-top:1px solid var(--line); }
+  .r-toggle-label{ font-size:14px; font-weight:600; }
+
+  .stat-field{ font-size:11px; color:var(--muted); }
+  .stat-field input{ width:100%; box-sizing:border-box; margin-top:4px; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:9px; color:var(--text); font-family:'Inter',sans-serif; }
+
+  .btn{ border:none; border-radius:10px; padding:11px; font-family:'Inter',sans-serif; font-size:13px; font-weight:600; cursor:pointer; }
+  .btn-gold{ background:var(--gold); color:#0B0B0D; font-family:'Bebas Neue',sans-serif; font-size:14px; letter-spacing:1px; padding:12px; }
+  .btn-line{ background:var(--panel-2); border:1px solid var(--line); color:var(--text); }
+  .btn-live{ background:linear-gradient(135deg,var(--live),var(--live-dark)); color:#fff; font-family:'Bebas Neue',sans-serif; font-size:14px; letter-spacing:1px; padding:12px; }
+
+  .log-row{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:8px; }
+  .log-row .l-title{ font-size:13px; font-weight:600; margin-bottom:3px; }
+  .log-row .l-body{ font-size:12px; color:var(--muted); line-height:1.5; }
+  .log-row .l-time{ font-size:11px; color:var(--muted); margin-top:4px; }
+
+  .back-link{ display:inline-flex; align-items:center; gap:6px; color:var(--muted); font-size:12.5px; cursor:pointer; margin-bottom:12px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand">БАТТЛ<span>.</span> АДМИН</div>
+    <div class="me" id="me-box" style="display:none;">
+      Вошёл как <b id="me-name">—</b><br>
+      <span id="me-role">—</span>
+    </div>
+  </div>
+
+  <div class="screen active" id="screen-loading">
+    <div class="center-msg">
+      <div class="big">Проверяем доступ…</div>
+      <div class="small">Секунду — сверяемся с базой БАТТЛ.</div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-denied">
+    <div class="center-msg denied">
+      <div class="big">ДОСТУП ЗАПРЕЩЁН</div>
+      <div class="small" id="denied-text">У твоего аккаунта нет прав модератора/админа. Роль выдаётся вручную через Firebase Console.</div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-app">
+
+    <div class="tabs">
+      <div class="tab active" data-tab="panel">Панель</div>
+      <div class="tab" data-tab="logs">Журнал</div>
+    </div>
+
+    <!-- ===== панель управления игроками ===== -->
+    <div class="screen active" data-panel="panel" id="panel-players">
+
+      <div class="section-label">Найти игрока по ID</div>
+      <div class="admin-search">
+        <input type="text" id="admin-search-input" placeholder="PLR-XXXXXX" autocomplete="off">
+        <button id="admin-search-btn">Найти</button>
+      </div>
+
+      <button class="list-toggle" id="btn-toggle-user-list">
+        <span style="display:flex;align-items:center;">СПИСОК ПОЛЬЗОВАТЕЛЕЙ<span class="count-badge" id="user-count-badge">0</span></span>
+        <span class="chevron" id="user-list-chevron">⌄</span>
+      </button>
+      <div id="user-list-wrap" style="display:none;">
+        <div class="section-label" id="user-list-label">Все игроки (0)</div>
+        <div id="user-list"></div>
+      </div>
+
+      <div class="admin-empty" id="admin-empty">Введи ID игрока или разверни список, чтобы посмотреть/изменить доступ</div>
+
+      <div class="admin-result" id="admin-result">
+        <div class="r-avatar" id="r-avatar"></div>
+        <div class="r-name" id="r-name">—</div>
+        <div class="r-id" id="r-id">—</div>
+        <div class="r-id" style="margin-bottom:12px;">Очков: <span id="r-points-val">0</span></div>
+        <div id="r-status-badge" style="margin-bottom:12px;"></div>
+
+        <div class="r-toggle-row">
+          <div class="r-toggle-label">Уровень доступа</div>
+          <div id="role-info"></div>
+        </div>
+
+        <div class="r-toggle-row">
+          <div class="r-toggle-label">Корректировка статистики</div>
+          <div id="stats-edit-block" style="display:none; flex-direction:column; gap:8px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <label class="stat-field">Points<input type="number" id="edit-points" min="0"></label>
+              <label class="stat-field">Stars<input type="number" id="edit-stars" min="0"></label>
+              <label class="stat-field">Battles<input type="number" id="edit-battles" min="0"></label>
+              <label class="stat-field">Победы<input type="number" id="edit-wins" min="0"></label>
+              <label class="stat-field">Поражения<input type="number" id="edit-losses" min="0"></label>
+              <label class="stat-field">Ничьи<input type="number" id="edit-draws" min="0"></label>
+              <label class="stat-field">Как рефери<input type="number" id="edit-referee" min="0"></label>
+              <label class="stat-field">Симпатии<input type="number" id="edit-likes" min="0"></label>
+            </div>
+            <button class="btn btn-gold" id="btn-save-stats">СОХРАНИТЬ СТАТИСТИКУ</button>
+          </div>
+          <div id="stats-edit-locked-note" class="admin-empty" style="display:none;padding:2px 0;">Изменять статистику могут только Админ и Супердоступ</div>
+        </div>
+
+        <div class="r-toggle-row">
+          <div class="r-toggle-label">Бан и ограничения</div>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-line ban-duration-btn" data-hours="1" style="flex:1;">1 час</button>
+              <button class="btn btn-line ban-duration-btn" data-hours="24" style="flex:1;">24 часа</button>
+              <button class="btn btn-line ban-duration-btn" data-hours="168" style="flex:1;">7 дней</button>
+            </div>
+            <button class="btn btn-live" id="btn-ban-forever">Забанить навсегда</button>
+            <button class="btn btn-line" id="btn-unban">Снять бан / ограничение</button>
+          </div>
+        </div>
+
+        <button class="btn btn-line" id="btn-open-player-history" style="width:100%; margin-top:14px;">📜 История этого игрока</button>
+      </div>
+
+    </div>
+
+    <!-- ===== журнал действий ===== -->
+    <div class="screen" data-panel="logs" id="panel-logs">
+      <div class="back-link" id="log-back-to-all" style="display:none;">← ко всем записям</div>
+      <div class="section-label" id="log-title">Журнал действий (все)</div>
+      <div id="log-list"></div>
+      <div class="admin-empty" id="log-empty" style="display:none;">Записей пока нет</div>
+    </div>
+
+  </div>
+
+</div>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+  // ===== та же Firebase-база, что и у основного сайта БАТТЛ =====
+  // Этот apiKey — публичный клиентский ключ веб-конфига Firebase, не секрет;
+  // реальная защита данных — это database.rules.json проекта, а не его тайна.
+  const firebaseConfig = {
+    apiKey: "AIzaSyBe2eSG48yzv_9r6Q5yUF7fe2b6YLQGuQg",
+    authDomain: "zolotaya-kletka.firebaseapp.com",
+    databaseURL: "https://zolotaya-kletka-default-rtdb.firebaseio.com",
+    projectId: "zolotaya-kletka",
+    storageBucket: "zolotaya-kletka.firebasestorage.app",
+    messagingSenderId: "570732456851",
+    appId: "1:570732456851:web:1a5e2ec46f5abf0e22d666"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  const tg = window.Telegram?.WebApp;
+  tg?.ready();
+  tg?.expand();
+
+  const ALLOWED_ROLES = ['moderator', 'admin', 'superadmin'];
+  const ROLE_LABELS = { user: 'Без доступа', moderator: 'Модератор', admin: 'Админ', superadmin: 'Супердоступ' };
+
+  let myTelegramId = null;
+  let myRole = 'user';
+  let foundUserKey = null;
+
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+
+  const tgUser = tg?.initDataUnsafe?.user;
+  if (!tgUser) {
+    document.getElementById('denied-text').textContent = 'Страница открыта не из Telegram — не могу определить, кто ты. Открой панель через кнопку бота.';
+    showScreen('screen-denied');
+  } else {
+    myTelegramId = String(tgUser.id);
+    db.ref('users/' + myTelegramId).once('value').then((snap) => {
+      const user = snap.val();
+      const role = user?.role || (user?.isAdmin ? 'admin' : 'user');
+      myRole = role;
+
+      if (!user || !ALLOWED_ROLES.includes(role)) {
+        showScreen('screen-denied');
+        return;
+      }
+
+      document.getElementById('me-box').style.display = 'block';
+      document.getElementById('me-name').textContent = user.firstName || 'Игрок';
+      document.getElementById('me-role').textContent = ROLE_LABELS[role] || role;
+
+      showScreen('screen-app');
+      loadUserList(false);
+    }).catch((err) => {
+      console.error(err);
+      document.getElementById('denied-text').textContent = 'Не удалось проверить доступ: ' + (err.message || err);
+      showScreen('screen-denied');
+    });
+  }
+
+  // ===== вкладки Панель / Журнал =====
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      document.querySelectorAll('[data-panel]').forEach(p => p.classList.remove('active'));
+      document.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.add('active');
+      if (tab.dataset.tab === 'logs') openAllLogs();
+    });
+  });
+
+  // ===== список пользователей =====
+  const userListWrap = document.getElementById('user-list-wrap');
+  const userListChevron = document.getElementById('user-list-chevron');
+  document.getElementById('btn-toggle-user-list').addEventListener('click', () => {
+    const isOpen = userListWrap.style.display !== 'none';
+    userListWrap.style.display = isOpen ? 'none' : 'block';
+    userListChevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+    if (!isOpen) loadUserList(true);
+  });
+
+  function loadUserList(renderList = true) {
+    Promise.all([
+      db.ref('users').once('value'),
+      db.ref('presence').once('value')
+    ]).then(([usersSnap, presenceSnap]) => {
+      const users = usersSnap.val() || {};
+      const onlineIds = presenceSnap.val() || {};
+      const listEl = document.getElementById('user-list');
+      const entries = Object.entries(users).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+
+      document.getElementById('user-list-label').textContent = `Все игроки (${entries.length})`;
+      document.getElementById('user-count-badge').textContent = entries.length.toLocaleString('ru-RU');
+      if (!renderList) return;
+      listEl.innerHTML = '';
+
+      entries.forEach(([key, user]) => {
+        const role = user.role || (user.isAdmin ? 'admin' : 'user');
+        const isOnline = !!onlineIds[key];
+        const isBanned = user.status === 'banned';
+        const isRestricted = user.status === 'restricted' && user.restrictedUntil && user.restrictedUntil > Date.now();
+        const isGuest = key.startsWith('guest_');
+        const row = document.createElement('div');
+        row.className = 'user-row' + (isOnline ? ' online' : '');
+        row.innerHTML = `
+          <div class="u-avatar">${(user.firstName || '??').slice(0, 2).toUpperCase()}<div class="u-online-dot"></div></div>
+          <div class="u-info">
+            <div class="u-name">${user.firstName || 'Без имени'}</div>
+            <div class="u-id">${user.playerId || key}</div>
+          </div>
+          ${isGuest ? '<div class="u-role-badge role-user" style="opacity:0.6;">guest</div>' : ''}
+          ${isBanned ? '<div class="u-role-badge role-admin">BAN</div>' : (isRestricted ? '<div class="u-role-badge role-admin">TIMEOUT</div>' : '')}
+          <div class="u-role-badge role-${role}">${role}</div>
+        `;
+        row.addEventListener('click', () => openUserDetail(key, user));
+        listEl.appendChild(row);
+      });
+    });
+
+    cleanupStaleGuests();
+  }
+
+  function cleanupStaleGuests() {
+    const GUEST_TTL_MS = 24 * 60 * 60 * 1000;
+    db.ref('users').once('value').then((snap) => {
+      const users = snap.val() || {};
+      const now = Date.now();
+      Object.entries(users).forEach(([key, user]) => {
+        if (!key.startsWith('guest_')) return;
+        if (now - (user.createdAt || 0) > GUEST_TTL_MS) {
+          db.ref('users/' + key).remove();
+          db.ref('presence/' + key).remove();
+        }
+      });
+    });
+  }
+
+  function renderStatusBadge(user) {
+    const badgeEl = document.getElementById('r-status-badge');
+    const now = Date.now();
+    if (user.status === 'banned') {
+      badgeEl.innerHTML = '<span class="badge live">ЗАБАНЕН НАВСЕГДА</span>';
+    } else if (user.status === 'restricted' && user.restrictedUntil && user.restrictedUntil > now) {
+      const hoursLeft = Math.ceil((user.restrictedUntil - now) / 3600000);
+      badgeEl.innerHTML = `<span class="badge live">ОГРАНИЧЕН ещё ~${hoursLeft} ч.</span>`;
+    } else {
+      badgeEl.innerHTML = '';
+    }
+  }
+
+  function canEditStats() { return myRole === 'admin' || myRole === 'superadmin'; }
+
+  function openUserDetail(userKey, user) {
+    foundUserKey = userKey;
+    const role = user.role || (user.isAdmin ? 'admin' : 'user');
+
+    document.getElementById('r-name').textContent = user.firstName || 'Без имени';
+    document.getElementById('r-id').textContent = user.playerId || userKey;
+    document.getElementById('r-points-val').textContent = user.points ?? 0;
+
+    const rAvatar = document.getElementById('r-avatar');
+    if (user.avatarData) { rAvatar.style.backgroundImage = `url('${user.avatarData}')`; rAvatar.textContent = ''; }
+    else { rAvatar.style.backgroundImage = ''; rAvatar.textContent = (user.firstName || '??').slice(0, 2).toUpperCase(); }
+
+    // Роли выдаются только вручную через Firebase Console — так же, как на
+    // основном сайте (см. database.rules.json). Здесь — только просмотр.
+    document.getElementById('role-info').innerHTML =
+      `<div class="admin-empty" style="padding:4px 0 0;">Текущий уровень: <strong>${ROLE_LABELS[role] || role}</strong>. Роли меняются только вручную через Firebase Console.</div>`;
+
+    renderStatusBadge(user);
+
+    const editable = canEditStats();
+    const stats = user.stats || {};
+    document.getElementById('stats-edit-block').style.display = editable ? 'flex' : 'none';
+    document.getElementById('stats-edit-locked-note').style.display = editable ? 'none' : 'block';
+    const statFields = {
+      'edit-points': user.points ?? 0, 'edit-stars': user.starsBalance ?? 0,
+      'edit-battles': stats.battles ?? 0, 'edit-wins': stats.wins ?? 0,
+      'edit-losses': stats.losses ?? 0, 'edit-draws': stats.draws ?? 0,
+      'edit-referee': stats.refereeBattles ?? 0, 'edit-likes': stats.audienceLikes ?? 0
+    };
+    Object.entries(statFields).forEach(([id, value]) => { const el = document.getElementById(id); if (el) el.value = value; });
+
+    document.getElementById('admin-empty').style.display = 'none';
+    const resultEl = document.getElementById('admin-result');
+    resultEl.style.display = 'block';
+    resultEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function searchPlayer() {
+    const query = document.getElementById('admin-search-input').value.trim().toUpperCase();
+    if (!query) return;
+    db.ref('users').orderByChild('playerId').equalTo(query).once('value').then((snap) => {
+      if (!snap.exists()) {
+        document.getElementById('admin-result').style.display = 'none';
+        const emptyEl = document.getElementById('admin-empty');
+        emptyEl.style.display = 'block';
+        emptyEl.textContent = 'Игрок с таким ID не найден';
+        foundUserKey = null;
+        return;
+      }
+      const data = snap.val();
+      const userKey = Object.keys(data)[0];
+      openUserDetail(userKey, data[userKey]);
+    });
+  }
+  document.getElementById('admin-search-btn').addEventListener('click', searchPlayer);
+  document.getElementById('admin-search-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') searchPlayer(); });
+
+  // ===== журнал действий =====
+  const ACTION_LABELS = {
+    role_change: 'Изменение роли', points_reset: 'Обнуление очков', points_given: 'Начисление очков',
+    stats_change: 'Изменение статистики', ban_temp: 'Временный бан', ban_forever: 'Бан навсегда', unban: 'Снятие бана'
+  };
+
+  function logAction(actionType, targetKey, targetName, targetPlayerId, details) {
+    db.ref('logs').push({
+      timestamp: Date.now(),
+      actorPlayerId: (tgUser && myTelegramId) ? myTelegramId : '—',
+      actorName: tgUser?.first_name || tgUser?.username || '—',
+      actionType, targetKey, targetName, targetPlayerId,
+      details: details || ''
+    });
+  }
+
+  function renderLogEntries(entries) {
+    const logListEl = document.getElementById('log-list');
+    const logEmptyEl = document.getElementById('log-empty');
+    logListEl.innerHTML = '';
+    if (entries.length === 0) { logEmptyEl.style.display = 'block'; return; }
+    logEmptyEl.style.display = 'none';
+    entries.forEach(entry => {
+      const row = document.createElement('div');
+      row.className = 'log-row';
+      const date = new Date(entry.timestamp).toLocaleString('ru-RU');
+      row.innerHTML = `
+        <div class="l-title">${ACTION_LABELS[entry.actionType] || entry.actionType}</div>
+        <div class="l-body">${entry.actorName} (${entry.actorPlayerId}) → ${entry.targetName || '—'} (${entry.targetPlayerId || '—'})${entry.details ? '<br>' + entry.details : ''}</div>
+        <div class="l-time">${date}</div>
+      `;
+      logListEl.appendChild(row);
+    });
+  }
+
+  function openAllLogs() {
+    document.getElementById('log-title').textContent = 'Журнал действий (все)';
+    document.getElementById('log-back-to-all').style.display = 'none';
+    db.ref('logs').limitToLast(100).once('value').then((snap) => {
+      const data = snap.val() || {};
+      renderLogEntries(Object.values(data).sort((a, b) => b.timestamp - a.timestamp));
+    });
+  }
+
+  document.getElementById('btn-open-player-history').addEventListener('click', () => {
+    if (!foundUserKey) return;
+    document.querySelector('.tab[data-tab="logs"]').click();
+    document.getElementById('log-title').textContent = 'История: ' + document.getElementById('r-id').textContent;
+    document.getElementById('log-back-to-all').style.display = 'inline-flex';
+    db.ref('logs').orderByChild('targetKey').equalTo(foundUserKey).once('value').then((snap) => {
+      const data = snap.val() || {};
+      renderLogEntries(Object.values(data).sort((a, b) => b.timestamp - a.timestamp));
+    });
+  });
+  document.getElementById('log-back-to-all').addEventListener('click', openAllLogs);
+
+  // ===== сохранение статистики =====
+  document.getElementById('btn-save-stats').addEventListener('click', () => {
+    if (!foundUserKey || !canEditStats()) return;
+    const val = id => Math.max(0, parseInt(document.getElementById(id).value, 10) || 0);
+    const updates = {
+      points: val('edit-points'), starsBalance: val('edit-stars'),
+      'stats/battles': val('edit-battles'), 'stats/wins': val('edit-wins'),
+      'stats/losses': val('edit-losses'), 'stats/draws': val('edit-draws'),
+      'stats/refereeBattles': val('edit-referee'), 'stats/audienceLikes': val('edit-likes')
+    };
+    const targetName = document.getElementById('r-name').textContent;
+    const targetPlayerId = document.getElementById('r-id').textContent;
+    db.ref('users/' + foundUserKey).update(updates).then(() => {
+      document.getElementById('r-points-val').textContent = updates.points;
+      logAction('stats_change', foundUserKey, targetName, targetPlayerId, 'Статистика изменена администратором');
+    }).catch(err => { console.error(err); alert('Не удалось сохранить статистику'); });
+  });
+
+  // ===== бан / ограничения =====
+  document.querySelectorAll('.ban-duration-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!foundUserKey) return;
+      const hours = parseInt(btn.dataset.hours, 10);
+      const until = Date.now() + hours * 3600000;
+      const targetName = document.getElementById('r-name').textContent;
+      const targetPlayerId = document.getElementById('r-id').textContent;
+      db.ref('users/' + foundUserKey).update({ status: 'restricted', restrictedUntil: until }).then(() => {
+        db.ref('users/' + foundUserKey).once('value').then(snap => renderStatusBadge(snap.val()));
+        logAction('ban_temp', foundUserKey, targetName, targetPlayerId, `Ограничение на ${hours} ч.`);
+      });
+    });
+  });
+
+  document.getElementById('btn-ban-forever').addEventListener('click', () => {
+    if (!foundUserKey) return;
+    const targetName = document.getElementById('r-name').textContent;
+    const targetPlayerId = document.getElementById('r-id').textContent;
+    db.ref('users/' + foundUserKey).update({ status: 'banned', restrictedUntil: null }).then(() => {
+      db.ref('users/' + foundUserKey).once('value').then(snap => renderStatusBadge(snap.val()));
+      logAction('ban_forever', foundUserKey, targetName, targetPlayerId, 'Забанен навсегда');
+    });
+  });
+
+  document.getElementById('btn-unban').addEventListener('click', () => {
+    if (!foundUserKey) return;
+    const targetName = document.getElementById('r-name').textContent;
+    const targetPlayerId = document.getElementById('r-id').textContent;
+    db.ref('users/' + foundUserKey).update({ status: 'active', restrictedUntil: null }).then(() => {
+      db.ref('users/' + foundUserKey).once('value').then(snap => renderStatusBadge(snap.val()));
+      logAction('unban', foundUserKey, targetName, targetPlayerId, 'Бан/ограничение снято');
+    });
+  });
+</script>
+</body>
+</html>
