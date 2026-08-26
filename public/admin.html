@@ -36,6 +36,11 @@
   .screen{ display:none; }
   .screen.active{ display:block; }
 
+  /* вкладки внутри экрана #screen-app — отдельный класс, чтобы верхнеуровневый
+     showScreen() (который снимает .active со всех .screen) их не задевал */
+  .subview{ display:none; }
+  .subview.active{ display:block; }
+
   .center-msg{ min-height:60vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:32px 12px; }
   .center-msg .big{ font-family:'Bebas Neue',sans-serif; font-size:26px; letter-spacing:1px; margin-bottom:10px; }
   .center-msg .small{ color:var(--muted); font-size:13.5px; line-height:1.5; max-width:280px; }
@@ -130,7 +135,7 @@
     </div>
 
     <!-- ===== панель управления игроками ===== -->
-    <div class="screen active" data-panel="panel" id="panel-players">
+    <div class="subview active" data-panel="panel" id="panel-players">
 
       <div class="section-label">Найти игрока по ID</div>
       <div class="admin-search">
@@ -198,7 +203,7 @@
     </div>
 
     <!-- ===== журнал действий ===== -->
-    <div class="screen" data-panel="logs" id="panel-logs">
+    <div class="subview" data-panel="logs" id="panel-logs">
       <div class="back-link" id="log-back-to-all" style="display:none;">← ко всем записям</div>
       <div class="section-label" id="log-title">Журнал действий (все)</div>
       <div id="log-list"></div>
