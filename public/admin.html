@@ -78,6 +78,13 @@
   .badge{ display:inline-block; font-size:10px; letter-spacing:0.5px; text-transform:uppercase; padding:2px 7px; border-radius:100px; }
   .badge.live{ background:rgba(255,61,46,0.15); color:var(--live); }
 
+  .badge-pill{ display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600; padding:6px 12px; border-radius:100px; background:var(--panel-2); border:1px solid var(--line); }
+  .badge-pill .emoji{ font-size:15px; line-height:1; }
+  .badge-pill.awarded{ border-color: var(--gold); background: rgba(242,183,5,0.1); }
+  .badge-pill.pick{ cursor:pointer; background:var(--panel-2); }
+  .badge-pill.pick.on{ border-color: var(--gold); background: rgba(242,183,5,0.15); color: var(--gold); }
+  .badge-pill .remove{ opacity:0.6; font-weight:700; }
+
   .admin-result{ background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; display:none; margin-top:4px; }
   .admin-result .r-avatar{ width:56px; height:56px; border-radius:50%; background:var(--panel-2); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-family:'Bebas Neue',sans-serif; font-size:18px; margin-bottom:12px; background-size:cover; background-position:center; }
   .admin-result .r-name{ font-size:15px; font-weight:700; margin-bottom:2px; }
@@ -167,6 +174,17 @@
         </div>
 
         <div class="r-toggle-row">
+          <div class="r-toggle-label">Значки-награды</div>
+          <div id="user-badges-list" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+          <div id="badge-catalog" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="new-badge-emoji" placeholder="🧪" maxlength="4" style="width:56px; text-align:center; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:9px; color:var(--text); font-size:16px;">
+            <input type="text" id="new-badge-label" placeholder="Название значка" style="flex:1; min-width:0; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:9px 12px; color:var(--text); font-family:'Inter',sans-serif; font-size:13px;">
+          </div>
+          <button class="btn btn-line" id="btn-create-badge">+ Создать значок</button>
+        </div>
+
+        <div class="r-toggle-row">
           <div class="r-toggle-label">Корректировка статистики</div>
           <div id="stats-edit-block" style="display:none; flex-direction:column; gap:8px;">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
@@ -243,6 +261,7 @@
   let myTelegramId = null;
   let myRole = 'user';
   let foundUserKey = null;
+  let badgeDefsCache = {};
 
   function showScreen(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -271,6 +290,7 @@
 
       showScreen('screen-app');
       loadUserList(false);
+      loadBadgeDefs();
     }).catch((err) => {
       console.error(err);
       document.getElementById('denied-text').textContent = 'Не удалось проверить доступ: ' + (err.message || err);
@@ -370,6 +390,76 @@
 
   function canEditStats() { return myRole === 'admin' || myRole === 'superadmin'; }
 
+  // ===== значки-награды =====
+  // Каталог значков (эмодзи + название) хранится в badgeDefs/<badgeId>,
+  // выданные конкретному игроку — в users/<key>/badges/<badgeId>: true.
+  // Показываются в профиле игрока на основном сайте.
+  function loadBadgeDefs() {
+    return db.ref('badgeDefs').once('value').then((snap) => {
+      let defs = snap.val();
+      if (!defs) {
+        return db.ref('badgeDefs').push({ emoji: '🧪', label: 'Альфа-тест', createdAt: Date.now() })
+          .then(() => db.ref('badgeDefs').once('value'))
+          .then((snap2) => { badgeDefsCache = snap2.val() || {}; return badgeDefsCache; });
+      }
+      badgeDefsCache = defs;
+      return defs;
+    });
+  }
+
+  function renderUserBadgesSection(userKey, userBadges) {
+    const awardedEl = document.getElementById('user-badges-list');
+    const catalogEl = document.getElementById('badge-catalog');
+    const awardedIds = Object.keys(userBadges || {});
+
+    awardedEl.innerHTML = awardedIds.length ? awardedIds.map(id => {
+      const def = badgeDefsCache[id];
+      if (!def) return '';
+      return `<div class="badge-pill awarded" data-remove-badge="${id}"><span class="emoji">${def.emoji || '🏅'}</span>${def.label || ''}<span class="remove">×</span></div>`;
+    }).join('') : '<div class="admin-empty" style="padding:2px 0;">Пока не выдано ни одного значка</div>';
+
+    catalogEl.innerHTML = Object.entries(badgeDefsCache).map(([id, def]) => {
+      const on = awardedIds.includes(id);
+      return `<div class="badge-pill pick${on ? ' on' : ''}" data-pick-badge="${id}"><span class="emoji">${def.emoji || '🏅'}</span>${def.label || ''}</div>`;
+    }).join('');
+
+    awardedEl.querySelectorAll('[data-remove-badge]').forEach(chip => {
+      chip.addEventListener('click', () => toggleBadge(userKey, chip.dataset.removeBadge, true));
+    });
+    catalogEl.querySelectorAll('[data-pick-badge]').forEach(chip => {
+      chip.addEventListener('click', () => toggleBadge(userKey, chip.dataset.pickBadge, awardedIds.includes(chip.dataset.pickBadge)));
+    });
+  }
+
+  function toggleBadge(userKey, badgeId, isAwarded) {
+    const def = badgeDefsCache[badgeId];
+    const targetName = document.getElementById('r-name').textContent;
+    const targetPlayerId = document.getElementById('r-id').textContent;
+    const ref = db.ref('users/' + userKey + '/badges/' + badgeId);
+    const op = isAwarded ? ref.remove() : ref.set(true);
+    op.then(() => {
+      logAction(isAwarded ? 'badge_revoked' : 'badge_given', userKey, targetName, targetPlayerId, def?.label || badgeId);
+      return db.ref('users/' + userKey + '/badges').once('value');
+    }).then((snap) => renderUserBadgesSection(userKey, snap.val()));
+  }
+
+  document.getElementById('btn-create-badge').addEventListener('click', () => {
+    if (!foundUserKey) return;
+    const emojiInput = document.getElementById('new-badge-emoji');
+    const labelInput = document.getElementById('new-badge-label');
+    const emoji = emojiInput.value.trim() || '🏅';
+    const label = labelInput.value.trim();
+    if (!label) { labelInput.focus(); return; }
+    db.ref('badgeDefs').push({ emoji, label, createdAt: Date.now() }).then((ref) => {
+      emojiInput.value = '';
+      labelInput.value = '';
+      logAction('badge_created', foundUserKey, label, ref.key, 'Новый значок в каталоге');
+      return loadBadgeDefs();
+    }).then(() => {
+      return db.ref('users/' + foundUserKey + '/badges').once('value');
+    }).then((snap) => renderUserBadgesSection(foundUserKey, snap.val()));
+  });
+
   function openUserDetail(userKey, user) {
     foundUserKey = userKey;
     const role = user.role || (user.isAdmin ? 'admin' : 'user');
@@ -388,6 +478,7 @@
       `<div class="admin-empty" style="padding:4px 0 0;">Текущий уровень: <strong>${ROLE_LABELS[role] || role}</strong>. Роли меняются только вручную через Firebase Console.</div>`;
 
     renderStatusBadge(user);
+    renderUserBadgesSection(userKey, user.badges || {});
 
     const editable = canEditStats();
     const stats = user.stats || {};
@@ -430,7 +521,8 @@
   // ===== журнал действий =====
   const ACTION_LABELS = {
     role_change: 'Изменение роли', points_reset: 'Обнуление очков', points_given: 'Начисление очков',
-    stats_change: 'Изменение статистики', ban_temp: 'Временный бан', ban_forever: 'Бан навсегда', unban: 'Снятие бана'
+    stats_change: 'Изменение статистики', ban_temp: 'Временный бан', ban_forever: 'Бан навсегда', unban: 'Снятие бана',
+    badge_given: 'Выдан значок', badge_revoked: 'Снят значок', badge_created: 'Создан новый значок'
   };
 
   function logAction(actionType, targetKey, targetName, targetPlayerId, details) {
