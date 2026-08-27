@@ -112,6 +112,16 @@
   .log-row .l-time{ font-size:11px; color:var(--muted); margin-top:4px; }
 
   .back-link{ display:inline-flex; align-items:center; gap:6px; color:var(--muted); font-size:12.5px; cursor:pointer; margin-bottom:12px; }
+
+  .field-label{ font-size:12px; color:var(--muted); margin-bottom:5px; display:block; }
+  .field-input{ width:100%; box-sizing:border-box; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; color:var(--text); font-family:'Inter',sans-serif; font-size:13.5px; resize:vertical; }
+  .field-block{ margin-bottom:14px; }
+  .event-preview{ background:var(--panel); border:1px solid var(--line); border-radius:14px; overflow:hidden; margin-bottom:16px; }
+  .event-preview img{ width:100%; height:110px; object-fit:cover; display:block; background:var(--panel-2); }
+  .event-preview .ep-empty{ height:110px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:12.5px; }
+  .event-status{ font-size:12.5px; padding:10px 12px; border-radius:10px; margin-bottom:14px; }
+  .event-status.on{ background:rgba(62,213,152,0.12); color:#3ED598; }
+  .event-status.off{ background:var(--panel-2); color:var(--muted); }
 </style>
 </head>
 <body>
@@ -144,6 +154,7 @@
 
     <div class="tabs">
       <div class="tab active" data-tab="panel">Панель</div>
+      <div class="tab" data-tab="event">Ивент</div>
       <div class="tab" data-tab="logs">Журнал</div>
     </div>
 
@@ -226,6 +237,46 @@
 
     </div>
 
+    <!-- ===== ивент-баннер на главном экране ===== -->
+    <div class="subview" data-panel="event" id="panel-event">
+
+      <div class="event-status off" id="event-status">Сейчас ивент не опубликован</div>
+
+      <div class="section-label">Картинка баннера</div>
+      <div class="event-preview">
+        <img id="event-img-preview" style="display:none;">
+        <div class="ep-empty" id="event-img-empty">Без картинки</div>
+      </div>
+      <input type="file" accept="image/*" id="event-img-input" style="display:none;">
+      <button class="btn btn-line" id="btn-event-pick-img" style="width:100%; margin-bottom:16px;">Загрузить картинку</button>
+
+      <div class="field-block">
+        <label class="field-label">Заголовок</label>
+        <input type="text" class="field-input" id="event-title-input" placeholder="Название ивента" maxlength="60">
+      </div>
+
+      <div class="field-block">
+        <label class="field-label">Описание</label>
+        <textarea class="field-input" id="event-desc-input" rows="3" placeholder="Коротко, о чём анонс" maxlength="240"></textarea>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;" class="field-block">
+        <div>
+          <label class="field-label">Показывать с</label>
+          <input type="datetime-local" class="field-input" id="event-start-input">
+        </div>
+        <div>
+          <label class="field-label">Показывать до</label>
+          <input type="datetime-local" class="field-input" id="event-end-input">
+        </div>
+      </div>
+      <div class="admin-empty" style="padding:0 0 14px; text-align:left;">Оставь поля дат пустыми, если ивент должен показываться без ограничения по времени.</div>
+
+      <button class="btn btn-gold" id="btn-event-publish" style="width:100%; margin-bottom:10px;">ОПУБЛИКОВАТЬ ИВЕНТ</button>
+      <button class="btn btn-line" id="btn-event-remove" style="width:100%;">Убрать ивент с главного экрана</button>
+
+    </div>
+
     <!-- ===== журнал действий ===== -->
     <div class="subview" data-panel="logs" id="panel-logs">
       <div class="back-link" id="log-back-to-all" style="display:none;">← ко всем записям</div>
@@ -304,7 +355,7 @@
     });
   }
 
-  // ===== вкладки Панель / Журнал =====
+  // ===== вкладки Панель / Ивент / Журнал =====
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -312,6 +363,7 @@
       document.querySelectorAll('[data-panel]').forEach(p => p.classList.remove('active'));
       document.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.add('active');
       if (tab.dataset.tab === 'logs') openAllLogs();
+      if (tab.dataset.tab === 'event') loadEventForm();
     });
   });
 
@@ -536,7 +588,8 @@
   // ===== журнал действий =====
   const ACTION_LABELS = {
     stats_change: 'Изменение статистики', ban_temp: 'Временный бан', ban_forever: 'Бан навсегда', unban: 'Снятие бана',
-    badge_given: 'Выдан значок', badge_revoked: 'Снят значок', badge_created: 'Создан новый значок'
+    badge_given: 'Выдан значок', badge_revoked: 'Снят значок', badge_created: 'Создан новый значок',
+    event_published: 'Опубликован ивент', event_removed: 'Ивент снят с главного экрана'
   };
 
   function logAction(actionType, targetKey, targetName, targetPlayerId, details) {
@@ -640,6 +693,106 @@
       db.ref('users/' + foundUserKey).once('value').then(snap => renderStatusBadge(snap.val()));
       logAction('unban', foundUserKey, targetName, targetPlayerId, 'Бан/ограничение снято');
     });
+  });
+
+  // ===== ивент-баннер на главном экране =====
+  // Пишется в events/current основной базы; главный сайт (index.html) сам
+  // слушает этот путь и показывает/прячет баннер — здесь только форма.
+  let eventImageData = null;
+
+  function toDatetimeLocalValue(ms) {
+    if (!ms) return '';
+    const d = new Date(ms - new Date().getTimezoneOffset() * 60000);
+    return d.toISOString().slice(0, 16);
+  }
+  function fromDatetimeLocalValue(str) {
+    if (!str) return null;
+    const ms = new Date(str).getTime();
+    return Number.isNaN(ms) ? null : ms;
+  }
+
+  function renderEventImagePreview() {
+    const imgEl = document.getElementById('event-img-preview');
+    const emptyEl = document.getElementById('event-img-empty');
+    if (eventImageData) {
+      imgEl.src = eventImageData;
+      imgEl.style.display = 'block';
+      emptyEl.style.display = 'none';
+    } else {
+      imgEl.style.display = 'none';
+      emptyEl.style.display = 'flex';
+    }
+  }
+
+  function loadEventForm() {
+    db.ref('events/current').once('value').then((snap) => {
+      const ev = snap.val();
+      const statusEl = document.getElementById('event-status');
+      if (!ev) {
+        statusEl.className = 'event-status off';
+        statusEl.textContent = 'Сейчас ивент не опубликован';
+        document.getElementById('event-title-input').value = '';
+        document.getElementById('event-desc-input').value = '';
+        document.getElementById('event-start-input').value = '';
+        document.getElementById('event-end-input').value = '';
+        eventImageData = null;
+        renderEventImagePreview();
+        return;
+      }
+      const now = Date.now();
+      const isLive = (!ev.startAt || now >= ev.startAt) && (!ev.endAt || now <= ev.endAt);
+      statusEl.className = 'event-status ' + (isLive ? 'on' : 'off');
+      statusEl.textContent = isLive ? 'Ивент сейчас показывается на главном экране' : 'Ивент сохранён, но сейчас не показывается (за пределами дат показа)';
+      document.getElementById('event-title-input').value = ev.title || '';
+      document.getElementById('event-desc-input').value = ev.description || '';
+      document.getElementById('event-start-input').value = toDatetimeLocalValue(ev.startAt);
+      document.getElementById('event-end-input').value = toDatetimeLocalValue(ev.endAt);
+      eventImageData = ev.imageData || null;
+      renderEventImagePreview();
+    });
+  }
+
+  document.getElementById('btn-event-pick-img').addEventListener('click', () => {
+    document.getElementById('event-img-input').click();
+  });
+  document.getElementById('event-img-input').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const img = new Image();
+      img.src = URL.createObjectURL(file);
+      await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; });
+      const maxW = 900;
+      const scale = Math.min(1, maxW / img.width);
+      const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(img.src);
+      eventImageData = canvas.toDataURL('image/jpeg', 0.75);
+      renderEventImagePreview();
+    } catch (err) { console.error('event image upload failed', err); alert('Не удалось загрузить картинку'); }
+    e.target.value = '';
+  });
+
+  document.getElementById('btn-event-publish').addEventListener('click', () => {
+    const title = document.getElementById('event-title-input').value.trim();
+    if (!title) { document.getElementById('event-title-input').focus(); return; }
+    const description = document.getElementById('event-desc-input').value.trim();
+    const startAt = fromDatetimeLocalValue(document.getElementById('event-start-input').value);
+    const endAt = fromDatetimeLocalValue(document.getElementById('event-end-input').value);
+    const payload = { title, description, imageData: eventImageData || null, startAt, endAt, createdAt: Date.now() };
+    db.ref('events/current').set(payload).then(() => {
+      logAction('event_published', 'events/current', title, '—', description);
+      loadEventForm();
+    }).catch((err) => { console.error(err); alert('Не удалось опубликовать ивент'); });
+  });
+
+  document.getElementById('btn-event-remove').addEventListener('click', () => {
+    const title = document.getElementById('event-title-input').value.trim() || '—';
+    db.ref('events/current').remove().then(() => {
+      logAction('event_removed', 'events/current', title, '—', '');
+      loadEventForm();
+    }).catch((err) => { console.error(err); alert('Не удалось убрать ивент'); });
   });
 </script>
 </body>
