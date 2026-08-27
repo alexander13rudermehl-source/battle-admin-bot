@@ -122,6 +122,13 @@
   .event-status{ font-size:12.5px; padding:10px 12px; border-radius:10px; margin-bottom:14px; }
   .event-status.on{ background:rgba(62,213,152,0.12); color:#3ED598; }
   .event-status.off{ background:var(--panel-2); color:var(--muted); }
+  .event-admin-row{ display:flex; align-items:center; gap:10px; padding:11px 12px; background:var(--panel); border:1px solid var(--line); border-radius:12px; cursor:pointer; margin-bottom:8px; }
+  .event-admin-row.editing{ border-color:var(--gold); }
+  .event-admin-row .ea-info{ flex:1; min-width:0; }
+  .event-admin-row .ea-title{ font-size:13.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .event-admin-row .ea-sub{ font-size:11.5px; color:var(--muted); margin-top:2px; }
+  .event-admin-row .ea-dot{ width:8px; height:8px; border-radius:50%; background:var(--muted); flex-shrink:0; }
+  .event-admin-row.live .ea-dot{ background:#3ED598; }
 </style>
 </head>
 <body>
@@ -240,7 +247,12 @@
     <!-- ===== ивент-баннер на главном экране ===== -->
     <div class="subview" data-panel="event" id="panel-event">
 
-      <div class="event-status off" id="event-status">Сейчас ивент не опубликован</div>
+      <div class="section-label" id="events-admin-list-label">Все ивенты (0)</div>
+      <div id="events-admin-list"></div>
+      <div class="admin-empty" id="events-admin-empty" style="display:none;">Ивентов пока нет</div>
+      <button class="btn btn-line" id="btn-event-new" style="width:100%; margin:4px 0 20px;">+ Новый ивент</button>
+
+      <div class="event-status off" id="event-status">Новый ивент — ещё не сохранён</div>
 
       <div class="section-label">Картинка баннера</div>
       <div class="event-preview">
@@ -284,8 +296,8 @@
       </div>
       <div class="admin-empty" style="padding:0 0 14px; text-align:left;">Оставь поля дат пустыми, если ивент должен показываться без ограничения по времени.</div>
 
-      <button class="btn btn-gold" id="btn-event-publish" style="width:100%; margin-bottom:10px;">ОПУБЛИКОВАТЬ ИВЕНТ</button>
-      <button class="btn btn-line" id="btn-event-remove" style="width:100%;">Убрать ивент с главного экрана</button>
+      <button class="btn btn-gold" id="btn-event-publish" style="width:100%; margin-bottom:10px;">СОХРАНИТЬ ИВЕНТ</button>
+      <button class="btn btn-line" id="btn-event-remove" style="width:100%;">Удалить этот ивент</button>
 
     </div>
 
@@ -375,7 +387,7 @@
       document.querySelectorAll('[data-panel]').forEach(p => p.classList.remove('active'));
       document.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.add('active');
       if (tab.dataset.tab === 'logs') openAllLogs();
-      if (tab.dataset.tab === 'event') loadEventForm();
+      if (tab.dataset.tab === 'event') loadEventsAdminList();
     });
   });
 
@@ -707,10 +719,14 @@
     });
   });
 
-  // ===== ивент-баннер на главном экране =====
-  // Пишется в events/current основной базы; главный сайт (index.html) сам
-  // слушает этот путь и показывает/прячет баннер — здесь только форма.
+  // ===== ивенты на главном экране =====
+  // Пишутся в events/<id> основной базы (может быть несколько активных
+  // одновременно) — главный сайт (index.html) сам решает, как их показать
+  // (один — плашкой, несколько — списком). Здесь только список + форма
+  // редактирования одного ивента за раз.
   let eventImageData = null;
+  let currentEventId = null; // null = создаём новый, иначе редактируем этот id
+  let eventsCache = {};
 
   function toDatetimeLocalValue(ms) {
     if (!ms) return '';
@@ -721,6 +737,10 @@
     if (!str) return null;
     const ms = new Date(str).getTime();
     return Number.isNaN(ms) ? null : ms;
+  }
+  function isEventLive(ev) {
+    const now = Date.now();
+    return (!ev.startAt || now >= ev.startAt) && (!ev.endAt || now <= ev.endAt);
   }
 
   function renderEventImagePreview() {
@@ -745,37 +765,68 @@
     selectEl.value = prev || '';
   }
 
-  function loadEventForm() {
+  function resetEventForm() {
+    currentEventId = null;
+    document.getElementById('event-status').className = 'event-status off';
+    document.getElementById('event-status').textContent = 'Новый ивент — ещё не сохранён';
+    document.getElementById('event-title-input').value = '';
+    document.getElementById('event-desc-input').value = '';
+    document.getElementById('event-start-input').value = '';
+    document.getElementById('event-end-input').value = '';
+    eventImageData = null;
+    renderEventImagePreview();
+    renderEventBadgeOptions('');
+    document.querySelectorAll('.event-admin-row').forEach(row => row.classList.remove('editing'));
+  }
+
+  function editEvent(id, ev) {
+    currentEventId = id;
+    const statusEl = document.getElementById('event-status');
+    const live = isEventLive(ev);
+    statusEl.className = 'event-status ' + (live ? 'on' : 'off');
+    statusEl.textContent = live ? 'Этот ивент сейчас показывается на главном экране' : 'Ивент сохранён, но сейчас не показывается (за пределами дат показа)';
+    document.getElementById('event-title-input').value = ev.title || '';
+    document.getElementById('event-desc-input').value = ev.description || '';
+    document.getElementById('event-start-input').value = toDatetimeLocalValue(ev.startAt);
+    document.getElementById('event-end-input').value = toDatetimeLocalValue(ev.endAt);
+    eventImageData = ev.imageData || null;
+    renderEventImagePreview();
+    renderEventBadgeOptions(ev.badgeId || '');
+    document.querySelectorAll('.event-admin-row').forEach(row => row.classList.toggle('editing', row.dataset.eventId === id));
+    document.getElementById('event-status').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function renderEventsAdminList() {
+    const listEl = document.getElementById('events-admin-list');
+    const emptyEl = document.getElementById('events-admin-empty');
+    const entries = Object.entries(eventsCache).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+    document.getElementById('events-admin-list-label').textContent = `Все ивенты (${entries.length})`;
+    emptyEl.style.display = entries.length ? 'none' : 'block';
+    listEl.innerHTML = entries.map(([id, ev]) => {
+      const live = isEventLive(ev);
+      return `<div class="event-admin-row${live ? ' live' : ''}${id === currentEventId ? ' editing' : ''}" data-event-id="${id}">
+        <div class="ea-dot"></div>
+        <div class="ea-info">
+          <div class="ea-title">${ev.title || 'Без названия'}</div>
+          <div class="ea-sub">${live ? 'Активен сейчас' : 'Не активен'}${ev.badgeId ? ' · со значком' : ''}</div>
+        </div>
+      </div>`;
+    }).join('');
+    listEl.querySelectorAll('[data-event-id]').forEach(row => {
+      row.addEventListener('click', () => editEvent(row.dataset.eventId, eventsCache[row.dataset.eventId]));
+    });
+  }
+
+  function loadEventsAdminList() {
     (badgeDefsReadyPromise || loadBadgeDefs()).then(() => {
-      db.ref('events/current').once('value').then((snap) => {
-        const ev = snap.val();
-        const statusEl = document.getElementById('event-status');
-        if (!ev) {
-          statusEl.className = 'event-status off';
-          statusEl.textContent = 'Сейчас ивент не опубликован';
-          document.getElementById('event-title-input').value = '';
-          document.getElementById('event-desc-input').value = '';
-          document.getElementById('event-start-input').value = '';
-          document.getElementById('event-end-input').value = '';
-          eventImageData = null;
-          renderEventImagePreview();
-          renderEventBadgeOptions('');
-          return;
-        }
-        const now = Date.now();
-        const isLive = (!ev.startAt || now >= ev.startAt) && (!ev.endAt || now <= ev.endAt);
-        statusEl.className = 'event-status ' + (isLive ? 'on' : 'off');
-        statusEl.textContent = isLive ? 'Ивент сейчас показывается на главном экране' : 'Ивент сохранён, но сейчас не показывается (за пределами дат показа)';
-        document.getElementById('event-title-input').value = ev.title || '';
-        document.getElementById('event-desc-input').value = ev.description || '';
-        document.getElementById('event-start-input').value = toDatetimeLocalValue(ev.startAt);
-        document.getElementById('event-end-input').value = toDatetimeLocalValue(ev.endAt);
-        eventImageData = ev.imageData || null;
-        renderEventImagePreview();
-        renderEventBadgeOptions(ev.badgeId || '');
+      db.ref('events').once('value').then((snap) => {
+        eventsCache = snap.val() || {};
+        renderEventsAdminList();
       });
     });
   }
+
+  document.getElementById('btn-event-new').addEventListener('click', resetEventForm);
 
   document.getElementById('btn-event-create-badge').addEventListener('click', () => {
     const emojiInput = document.getElementById('event-new-badge-emoji');
@@ -820,19 +871,23 @@
     const startAt = fromDatetimeLocalValue(document.getElementById('event-start-input').value);
     const endAt = fromDatetimeLocalValue(document.getElementById('event-end-input').value);
     const badgeId = document.getElementById('event-badge-select').value || null;
-    const payload = { title, description, imageData: eventImageData || null, startAt, endAt, badgeId, createdAt: Date.now() };
-    db.ref('events/current').set(payload).then(() => {
-      logAction('event_published', 'events/current', title, '—', description);
-      loadEventForm();
-    }).catch((err) => { console.error(err); alert('Не удалось опубликовать ивент'); });
+    const payload = { title, description, imageData: eventImageData || null, startAt, endAt, badgeId, createdAt: eventsCache[currentEventId]?.createdAt || Date.now() };
+    const ref = currentEventId ? db.ref('events/' + currentEventId) : db.ref('events').push();
+    ref.set(payload).then(() => {
+      logAction('event_published', ref.key, title, '—', description);
+      currentEventId = ref.key;
+      loadEventsAdminList();
+    }).catch((err) => { console.error(err); alert('Не удалось сохранить ивент'); });
   });
 
   document.getElementById('btn-event-remove').addEventListener('click', () => {
+    if (!currentEventId) { alert('Сначала выбери сохранённый ивент в списке — этот ещё не сохранён'); return; }
     const title = document.getElementById('event-title-input').value.trim() || '—';
-    db.ref('events/current').remove().then(() => {
-      logAction('event_removed', 'events/current', title, '—', '');
-      loadEventForm();
-    }).catch((err) => { console.error(err); alert('Не удалось убрать ивент'); });
+    db.ref('events/' + currentEventId).remove().then(() => {
+      logAction('event_removed', currentEventId, title, '—', '');
+      resetEventForm();
+      loadEventsAdminList();
+    }).catch((err) => { console.error(err); alert('Не удалось удалить ивент'); });
   });
 </script>
 </body>
