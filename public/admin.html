@@ -325,11 +325,13 @@
 
          Дальше — второй, куда более настоящий барьер, чем просто набрать
          фразу самому себе: одноразовый код, который генерирует эта
-         страница, но присылает НЕ она сама, а отдельный процесс бота
-         (bot/index.js) личным сообщением в Telegram тому же telegramId
-         (см. resetConfirmations в базе). Тот, у кого просто открыта эта
-         вкладка в браузере, кода не получит — он должен ещё и иметь
-         доступ к тому самому Telegram-аккаунту. -->
+         страница (пишет в resetConfirmations/<telegramId>), но присылает
+         НЕ она сама, а serverless-функция /api/send-reset-code личным
+         сообщением в Telegram тому же telegramId (сама функция перечитывает
+         код и роль заново из базы, не доверяя телу запроса — см.
+         api/send-reset-code.js). Тот, у кого просто открыта эта вкладка в
+         браузере, кода не получит — он должен ещё и иметь доступ к тому
+         самому Telegram-аккаунту. -->
     <div class="subview" data-panel="danger" id="panel-danger">
 
       <div class="center-msg" id="danger-checking" style="min-height:30vh;">
@@ -973,13 +975,15 @@
   // Второй барьер — уже не просто фраза, которую человек вводит сам себе
   // (это ничего не защищает, если он и так уже открыл эту вкладку), а
   // одноразовый код: эта страница только ЗАПРАШИВАЕТ его (пишет заявку в
-  // resetConfirmations/<telegramId>), а фактически присылает — отдельный
-  // процесс бота (bot/index.js), личным сообщением в тот же Telegram-чат.
-  // Без доступа к этому чату код не получить, даже имея открытую вкладку
-  // панели в браузере. database.rules.json всё ещё разрешает запись всем
-  // без исключения (см. README) — так что технически можно дописать код
-  // в базу и вручную, минуя бота, но это уже требует отдельных
-  // целенаправленных действий, а не случайного клика по кнопке.
+  // resetConfirmations/<telegramId>), а фактически присылает —
+  // serverless-функция /api/send-reset-code, личным сообщением в тот же
+  // Telegram-чат (см. api/send-reset-code.js — она не доверяет телу
+  // запроса и перечитывает код/роль заново из базы). Без доступа к этому
+  // чату код не получить, даже имея открытую вкладку панели в браузере.
+  // database.rules.json всё ещё разрешает запись всем без исключения (см.
+  // README) — так что технически можно дописать код в базу и вручную,
+  // минуя эту функцию, но это уже требует отдельных целенаправленных
+  // действий, а не случайного клика по кнопке.
   let dangerZoneVerifiedRole = null;
   const RESET_CODE_TTL_MS = 5 * 60 * 1000;
 
@@ -1018,15 +1022,29 @@
 
   function sendResetCode() {
     // 6 цифр — этого достаточно: код одноразовый, живёт 5 минут и приходит
-    // только в личку конкретному telegramId, это не пароль для перебора
+    // только в личку конкретному telegramId, это не пароль для перебора.
+    // Сначала кладём код в базу, потом просим serverless-функцию
+    // /api/send-reset-code его доставить — сама функция ничего не берёт из
+    // тела запроса, кроме telegramId, и перечитывает код заново из базы
+    // (см. комментарий в самой функции, зачем это важно).
     const code = String(Math.floor(100000 + Math.random() * 900000));
-    db.ref('resetConfirmations/' + myTelegramId).set({ code, createdAt: Date.now(), used: false }).then(() => {
-      document.getElementById('danger-step-request').style.display = 'none';
-      document.getElementById('danger-step-verify').style.display = 'block';
-      document.getElementById('danger-code-input').value = '';
-      document.getElementById('btn-danger-reset').disabled = true;
-      document.getElementById('danger-code-input').focus();
-    }).catch((err) => { console.error(err); alert('Не удалось запросить код: ' + (err.message || err)); });
+    const sendBtn = document.getElementById('btn-danger-send-code');
+    sendBtn.disabled = true;
+    db.ref('resetConfirmations/' + myTelegramId).set({ code, createdAt: Date.now(), used: false })
+      .then(() => fetch('/api/send-reset-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ telegramId: myTelegramId })
+      }))
+      .then((res) => res.json().then((data) => { if (!res.ok || !data.ok) throw new Error(data.error || 'send failed'); }))
+      .then(() => {
+        document.getElementById('danger-step-request').style.display = 'none';
+        document.getElementById('danger-step-verify').style.display = 'block';
+        document.getElementById('danger-code-input').value = '';
+        document.getElementById('btn-danger-reset').disabled = true;
+        document.getElementById('danger-code-input').focus();
+      }).catch((err) => { console.error(err); alert('Не удалось отправить код: ' + (err.message || err)); })
+      .finally(() => { sendBtn.disabled = false; });
   }
   document.getElementById('btn-danger-send-code').addEventListener('click', sendResetCode);
   document.getElementById('btn-danger-resend-code').addEventListener('click', sendResetCode);
