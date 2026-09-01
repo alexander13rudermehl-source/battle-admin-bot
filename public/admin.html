@@ -163,6 +163,10 @@
       <div class="tab active" data-tab="panel">Панель</div>
       <div class="tab" data-tab="event">Ивент</div>
       <div class="tab" data-tab="logs">Журнал</div>
+      <!-- видна только superadmin (см. проверку роли при входе) — необратимо
+           стирает историю боёв и очки/статистику у всех игроков перед
+           настоящим стартом бета-теста -->
+      <div class="tab" data-tab="danger" id="tab-danger" style="display:none;">⚠️ Сброс</div>
     </div>
 
     <!-- ===== панель управления игроками ===== -->
@@ -309,6 +313,28 @@
       <div class="admin-empty" id="log-empty" style="display:none;">Записей пока нет</div>
     </div>
 
+    <!-- ===== опасная зона: полный сброс перед бета-тестом =====
+         Необратимо — и, как честно предупреждает README, никакой
+         серверной защиты сверх скрытия кнопки в интерфейсе нет
+         (database.rules.json сейчас разрешает запись всем). Поэтому
+         дополнительный барьер здесь — не полагаться только на то, что
+         кнопка не видна не-superadmin, а требовать явно набрать фразу
+         подтверждения, прежде чем кнопка вообще станет нажимаемой. -->
+    <div class="subview" data-panel="danger" id="panel-danger">
+      <div class="section-label">Опасная зона</div>
+      <div class="admin-empty" style="text-align:left; padding:0 0 16px; color:var(--live);">
+        Необратимо удаляет всю историю боёв — matches, battles и очереди поиска
+        (queue, refereeQueue) — и обнуляет у ВСЕХ игроков очки, месячный рейтинг,
+        статистику, значки-награды и баланс Stars. Сами аккаунты, роли и списки
+        друзей/заявок не трогает. Делай это только перед настоящим стартом
+        бета-теста, когда вся текущая история — просто тестовый мусор.
+      </div>
+      <label class="field-label">Введи СБРОСИТЬ заглавными, чтобы разблокировать кнопку</label>
+      <input type="text" class="field-input" id="reset-confirm-input" placeholder="СБРОСИТЬ" style="margin-bottom:14px; text-transform:uppercase;" autocomplete="off">
+      <button class="btn btn-live" id="btn-danger-reset" style="width:100%;" disabled>Сбросить всё перед бета-тестом</button>
+      <div class="admin-empty" id="danger-reset-result" style="display:none; margin-top:14px;"></div>
+    </div>
+
   </div>
 
 </div>
@@ -368,6 +394,9 @@
       document.getElementById('me-box').style.display = 'block';
       document.getElementById('me-name').textContent = user.firstName || 'Игрок';
       document.getElementById('me-role').textContent = ROLE_LABELS[role] || role;
+      // полный сброс перед бета-тестом — самая необратимая кнопка панели,
+      // видна только superadmin (даже admin её не видит)
+      document.getElementById('tab-danger').style.display = role === 'superadmin' ? '' : 'none';
 
       showScreen('screen-app');
       loadUserList(false);
@@ -388,6 +417,9 @@
       document.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.add('active');
       if (tab.dataset.tab === 'logs') openAllLogs();
       if (tab.dataset.tab === 'event') loadEventsAdminList();
+      // при каждом заходе на вкладку сброса — снова требуем набрать фразу
+      // заново, а не оставляем кнопку разблокированной с прошлого раза
+      if (tab.dataset.tab === 'danger') resetDangerZoneForm();
     });
   });
 
@@ -613,7 +645,8 @@
   const ACTION_LABELS = {
     stats_change: 'Изменение статистики', ban_temp: 'Временный бан', ban_forever: 'Бан навсегда', unban: 'Снятие бана',
     badge_given: 'Выдан значок', badge_revoked: 'Снят значок', badge_created: 'Создан новый значок',
-    event_published: 'Опубликован ивент', event_removed: 'Ивент снят с главного экрана'
+    event_published: 'Опубликован ивент', event_removed: 'Ивент снят с главного экрана',
+    full_reset: '⚠️ Полный сброс перед бета-тестом'
   };
 
   function logAction(actionType, targetKey, targetName, targetPlayerId, details) {
@@ -888,6 +921,72 @@
       resetEventForm();
       loadEventsAdminList();
     }).catch((err) => { console.error(err); alert('Не удалось удалить ивент'); });
+  });
+
+  // ===== опасная зона: полный сброс перед бета-тестом =====
+  // Стирает историю боёв (matches/battles/queue/refereeQueue) и обнуляет у
+  // всех игроков очки/статистику/значки/Stars — но НЕ трогает сами
+  // аккаунты (имя, playerId, role) и НЕ трогает friends/friendRequests.
+  // database.rules.json сейчас разрешает запись всем без исключения (см.
+  // README) — то, что кнопка видна только superadmin и скрыта для всех
+  // остальных, чисто UI-барьер, а не настоящая защита. Поэтому вторая
+  // линия обороны здесь — явная фраза-подтверждение, которую нужно
+  // набрать вручную, прежде чем кнопка вообще станет нажимаемой.
+  const RESET_CONFIRM_PHRASE = 'СБРОСИТЬ';
+  function resetDangerZoneForm() {
+    document.getElementById('reset-confirm-input').value = '';
+    document.getElementById('btn-danger-reset').disabled = true;
+    document.getElementById('btn-danger-reset').textContent = 'Сбросить всё перед бета-тестом';
+    document.getElementById('danger-reset-result').style.display = 'none';
+  }
+  document.getElementById('reset-confirm-input').addEventListener('input', (e) => {
+    document.getElementById('btn-danger-reset').disabled = e.target.value.trim().toUpperCase() !== RESET_CONFIRM_PHRASE;
+  });
+
+  document.getElementById('btn-danger-reset').addEventListener('click', async () => {
+    if (myRole !== 'superadmin') return; // на случай если роль сменилась за время открытой вкладки
+    if (document.getElementById('reset-confirm-input').value.trim().toUpperCase() !== RESET_CONFIRM_PHRASE) return;
+    const btn = document.getElementById('btn-danger-reset');
+    const resultEl = document.getElementById('danger-reset-result');
+    btn.disabled = true;
+    btn.textContent = 'Сбрасываю…';
+    resultEl.style.display = 'none';
+    try {
+      const usersSnap = await db.ref('users').once('value');
+      const users = usersSnap.val() || {};
+      const userKeys = Object.keys(users);
+      const update = {
+        matches: null,
+        battles: null,
+        queue: null,
+        refereeQueue: null
+      };
+      userKeys.forEach((key) => {
+        update['users/' + key + '/points'] = 0;
+        update['users/' + key + '/monthlyPoints'] = 0;
+        update['users/' + key + '/monthlyPeriod'] = null;
+        update['users/' + key + '/starsBalance'] = 0;
+        update['users/' + key + '/stats'] = { battles: 0, wins: 0, losses: 0, draws: 0, refereeBattles: 0, audienceLikes: 0 };
+        update['users/' + key + '/badges'] = null;
+      });
+      await db.ref().update(update);
+      logAction('full_reset', '—', 'Все игроки', '—',
+        `Сброшены очки/статистика/значки у ${userKeys.length} игроков; удалены matches/battles/queue/refereeQueue`);
+      resultEl.textContent = `Готово — сброшено ${userKeys.length} игроков, вся история боёв удалена.`;
+      resultEl.style.display = 'block';
+      document.getElementById('reset-confirm-input').value = '';
+      // если сейчас открыта чья-то карточка — обновим показанные в ней
+      // очки/статистику, а то они останутся висеть старыми до нового поиска
+      if (foundUserKey) {
+        db.ref('users/' + foundUserKey).once('value').then((snap) => { if (snap.exists()) openUserDetail(foundUserKey, snap.val()); });
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Не удалось выполнить сброс: ' + (err.message || err));
+    } finally {
+      btn.textContent = 'Сбросить всё перед бета-тестом';
+      // намеренно НЕ разблокируем кнопку обратно — надо снова набрать фразу
+    }
   });
 </script>
 </body>
