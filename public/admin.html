@@ -163,10 +163,11 @@
       <div class="tab active" data-tab="panel">Панель</div>
       <div class="tab" data-tab="event">Ивент</div>
       <div class="tab" data-tab="logs">Журнал</div>
-      <!-- видна только superadmin (см. проверку роли при входе) — необратимо
-           стирает историю боёв и очки/статистику у всех игроков перед
-           настоящим стартом бета-теста -->
-      <div class="tab" data-tab="danger" id="tab-danger" style="display:none;">⚠️ Сброс</div>
+      <!-- видна всем, у кого вообще есть доступ к панели (moderator/admin/
+           superadmin) — а вот воспользоваться получится только у
+           superadmin, это проверяется заново при каждом открытии вкладки
+           (см. openDangerZone), а не один раз при входе в панель -->
+      <div class="tab" data-tab="danger" id="tab-danger">⚠️ Сброс</div>
     </div>
 
     <!-- ===== панель управления игроками ===== -->
@@ -314,25 +315,48 @@
     </div>
 
     <!-- ===== опасная зона: полный сброс перед бета-тестом =====
-         Необратимо — и, как честно предупреждает README, никакой
-         серверной защиты сверх скрытия кнопки в интерфейсе нет
-         (database.rules.json сейчас разрешает запись всем). Поэтому
-         дополнительный барьер здесь — не полагаться только на то, что
-         кнопка не видна не-superadmin, а требовать явно набрать фразу
-         подтверждения, прежде чем кнопка вообще станет нажимаемой. -->
+         Вкладку видят все, у кого вообще есть доступ к панели
+         (moderator/admin/superadmin) — но воспользоваться получится
+         только у superadmin. Права проверяются заново живым запросом к
+         базе при КАЖДОМ открытии вкладки (см. openDangerZone в JS), а не
+         один раз при входе в панель — так если роль сменили, пока вкладка
+         админ-панели просто лежала открытой, старый доступ не сохранится.
+         И даже после этой проверки — как честно предупреждает README,
+         никакой серверной защиты сверх интерфейса нет (database.rules.json
+         сейчас разрешает запись всем), поэтому дополнительный барьер —
+         требовать явно набрать фразу подтверждения, прежде чем кнопка
+         вообще станет нажимаемой. -->
     <div class="subview" data-panel="danger" id="panel-danger">
-      <div class="section-label">Опасная зона</div>
-      <div class="admin-empty" style="text-align:left; padding:0 0 16px; color:var(--live);">
-        Необратимо удаляет всю историю боёв — matches, battles и очереди поиска
-        (queue, refereeQueue) — и обнуляет у ВСЕХ игроков очки, месячный рейтинг,
-        статистику, значки-награды и баланс Stars. Сами аккаунты, роли и списки
-        друзей/заявок не трогает. Делай это только перед настоящим стартом
-        бета-теста, когда вся текущая история — просто тестовый мусор.
+
+      <div class="center-msg" id="danger-checking" style="min-height:30vh;">
+        <div class="big">Проверяем доступ…</div>
+        <div class="small">Секунду — сверяемся с базой, у кого сейчас есть право на сброс.</div>
       </div>
-      <label class="field-label">Введи СБРОСИТЬ заглавными, чтобы разблокировать кнопку</label>
-      <input type="text" class="field-input" id="reset-confirm-input" placeholder="СБРОСИТЬ" style="margin-bottom:14px; text-transform:uppercase;" autocomplete="off">
-      <button class="btn btn-live" id="btn-danger-reset" style="width:100%;" disabled>Сбросить всё перед бета-тестом</button>
-      <div class="admin-empty" id="danger-reset-result" style="display:none; margin-top:14px;"></div>
+
+      <div id="danger-denied" style="display:none;">
+        <div class="section-label">Опасная зона</div>
+        <div class="admin-empty" style="text-align:left; padding:0;">
+          Полный сброс истории и статистики перед бета-тестом — действие
+          только для Супердоступа. У твоей текущей роли (<b id="danger-denied-role">—</b>)
+          нет прав его выполнить.
+        </div>
+      </div>
+
+      <div id="danger-allowed" style="display:none;">
+        <div class="section-label">Опасная зона</div>
+        <div class="admin-empty" style="text-align:left; padding:0 0 16px; color:var(--live);">
+          Необратимо удаляет всю историю боёв — matches, battles и очереди поиска
+          (queue, refereeQueue) — и обнуляет у ВСЕХ игроков очки, месячный рейтинг,
+          статистику, значки-награды и баланс Stars. Сами аккаунты, роли и списки
+          друзей/заявок не трогает. Делай это только перед настоящим стартом
+          бета-теста, когда вся текущая история — просто тестовый мусор.
+        </div>
+        <label class="field-label">Введи СБРОСИТЬ заглавными, чтобы разблокировать кнопку</label>
+        <input type="text" class="field-input" id="reset-confirm-input" placeholder="СБРОСИТЬ" style="margin-bottom:14px; text-transform:uppercase;" autocomplete="off">
+        <button class="btn btn-live" id="btn-danger-reset" style="width:100%;" disabled>Сбросить всё перед бета-тестом</button>
+        <div class="admin-empty" id="danger-reset-result" style="display:none; margin-top:14px;"></div>
+      </div>
+
     </div>
 
   </div>
@@ -394,9 +418,6 @@
       document.getElementById('me-box').style.display = 'block';
       document.getElementById('me-name').textContent = user.firstName || 'Игрок';
       document.getElementById('me-role').textContent = ROLE_LABELS[role] || role;
-      // полный сброс перед бета-тестом — самая необратимая кнопка панели,
-      // видна только superadmin (даже admin её не видит)
-      document.getElementById('tab-danger').style.display = role === 'superadmin' ? '' : 'none';
 
       showScreen('screen-app');
       loadUserList(false);
@@ -417,9 +438,7 @@
       document.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.add('active');
       if (tab.dataset.tab === 'logs') openAllLogs();
       if (tab.dataset.tab === 'event') loadEventsAdminList();
-      // при каждом заходе на вкладку сброса — снова требуем набрать фразу
-      // заново, а не оставляем кнопку разблокированной с прошлого раза
-      if (tab.dataset.tab === 'danger') resetDangerZoneForm();
+      if (tab.dataset.tab === 'danger') openDangerZone();
     });
   });
 
@@ -927,12 +946,46 @@
   // Стирает историю боёв (matches/battles/queue/refereeQueue) и обнуляет у
   // всех игроков очки/статистику/значки/Stars — но НЕ трогает сами
   // аккаунты (имя, playerId, role) и НЕ трогает friends/friendRequests.
+  //
+  // Вкладку видят все, у кого есть доступ к панели (moderator/admin/
+  // superadmin) — а не только superadmin, как было раньше. Вместо этого
+  // право реально воспользоваться кнопкой проверяется живым запросом к
+  // базе КАЖДЫЙ РАЗ при открытии вкладки (а не один раз при входе в
+  // панель, как myRole) — так роль, отозванную уже после открытия панели,
+  // не проигнорируем по старому кэшу.
+  //
   // database.rules.json сейчас разрешает запись всем без исключения (см.
-  // README) — то, что кнопка видна только superadmin и скрыта для всех
-  // остальных, чисто UI-барьер, а не настоящая защита. Поэтому вторая
-  // линия обороны здесь — явная фраза-подтверждение, которую нужно
-  // набрать вручную, прежде чем кнопка вообще станет нажимаемой.
+  // README) — то, что кнопка вообще работает только после этой проверки,
+  // чисто UI-барьер, а не настоящая защита. Поэтому вторая линия обороны —
+  // явная фраза-подтверждение, которую нужно набрать вручную, прежде чем
+  // кнопка вообще станет нажимаемой.
   const RESET_CONFIRM_PHRASE = 'СБРОСИТЬ';
+  let dangerZoneVerifiedRole = null;
+
+  function openDangerZone() {
+    dangerZoneVerifiedRole = null;
+    document.getElementById('danger-checking').style.display = 'block';
+    document.getElementById('danger-denied').style.display = 'none';
+    document.getElementById('danger-allowed').style.display = 'none';
+    db.ref('users/' + myTelegramId + '/role').once('value').then((snap) => {
+      const freshRole = snap.val() || 'user';
+      dangerZoneVerifiedRole = freshRole;
+      document.getElementById('danger-checking').style.display = 'none';
+      if (freshRole === 'superadmin') {
+        document.getElementById('danger-allowed').style.display = 'block';
+        resetDangerZoneForm();
+      } else {
+        document.getElementById('danger-denied-role').textContent = ROLE_LABELS[freshRole] || freshRole;
+        document.getElementById('danger-denied').style.display = 'block';
+      }
+    }).catch((err) => {
+      console.error(err);
+      document.getElementById('danger-checking').style.display = 'none';
+      document.getElementById('danger-denied-role').textContent = 'не удалось проверить';
+      document.getElementById('danger-denied').style.display = 'block';
+    });
+  }
+
   function resetDangerZoneForm() {
     document.getElementById('reset-confirm-input').value = '';
     document.getElementById('btn-danger-reset').disabled = true;
@@ -944,7 +997,7 @@
   });
 
   document.getElementById('btn-danger-reset').addEventListener('click', async () => {
-    if (myRole !== 'superadmin') return; // на случай если роль сменилась за время открытой вкладки
+    if (dangerZoneVerifiedRole !== 'superadmin') return; // на случай подделки клика мимо проверки выше
     if (document.getElementById('reset-confirm-input').value.trim().toUpperCase() !== RESET_CONFIRM_PHRASE) return;
     const btn = document.getElementById('btn-danger-reset');
     const resultEl = document.getElementById('danger-reset-result');
