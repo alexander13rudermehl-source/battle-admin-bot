@@ -167,7 +167,7 @@
            superadmin) — а вот воспользоваться получится только у
            superadmin, это проверяется заново при каждом открытии вкладки
            (см. openDangerZone), а не один раз при входе в панель -->
-      <div class="tab" data-tab="danger" id="tab-danger">⚠️ Сброс</div>
+      <div class="tab" data-tab="danger" id="tab-danger">Правила платформы</div>
     </div>
 
     <!-- ===== панель управления игроками ===== -->
@@ -314,18 +314,22 @@
       <div class="admin-empty" id="log-empty" style="display:none;">Записей пока нет</div>
     </div>
 
-    <!-- ===== опасная зона: полный сброс перед бета-тестом =====
-         Вкладку видят все, у кого вообще есть доступ к панели
-         (moderator/admin/superadmin) — но воспользоваться получится
-         только у superadmin. Права проверяются заново живым запросом к
-         базе при КАЖДОМ открытии вкладки (см. openDangerZone в JS), а не
-         один раз при входе в панель — так если роль сменили, пока вкладка
-         админ-панели просто лежала открытой, старый доступ не сохранится.
-         И даже после этой проверки — как честно предупреждает README,
-         никакой серверной защиты сверх интерфейса нет (database.rules.json
-         сейчас разрешает запись всем), поэтому дополнительный барьер —
-         требовать явно набрать фразу подтверждения, прежде чем кнопка
-         вообще станет нажимаемой. -->
+    <!-- ===== "Правила платформы" — на самом деле опасная зона (полный
+         сброс перед бета-тестом), название вкладки нарочно нейтральное.
+         Видят её все, у кого вообще есть доступ к панели (moderator/admin/
+         superadmin) — но воспользоваться получится только у superadmin.
+         Права проверяются заново живым запросом к базе при КАЖДОМ
+         открытии вкладки (см. openDangerZone в JS), а не один раз при
+         входе в панель — так если роль сменили, пока вкладка админ-панели
+         просто лежала открытой, старый доступ не сохранится.
+
+         Дальше — второй, куда более настоящий барьер, чем просто набрать
+         фразу самому себе: одноразовый код, который генерирует эта
+         страница, но присылает НЕ она сама, а отдельный процесс бота
+         (bot/index.js) личным сообщением в Telegram тому же telegramId
+         (см. resetConfirmations в базе). Тот, у кого просто открыта эта
+         вкладка в браузере, кода не получит — он должен ещё и иметь
+         доступ к тому самому Telegram-аккаунту. -->
     <div class="subview" data-panel="danger" id="panel-danger">
 
       <div class="center-msg" id="danger-checking" style="min-height:30vh;">
@@ -351,9 +355,21 @@
           друзей/заявок не трогает. Делай это только перед настоящим стартом
           бета-теста, когда вся текущая история — просто тестовый мусор.
         </div>
-        <label class="field-label">Введи СБРОСИТЬ заглавными, чтобы разблокировать кнопку</label>
-        <input type="text" class="field-input" id="reset-confirm-input" placeholder="СБРОСИТЬ" style="margin-bottom:14px; text-transform:uppercase;" autocomplete="off">
-        <button class="btn btn-live" id="btn-danger-reset" style="width:100%;" disabled>Сбросить всё перед бета-тестом</button>
+
+        <div id="danger-step-request">
+          <button class="btn btn-line" id="btn-danger-send-code" style="width:100%;">📨 Отправить код подтверждения в Telegram</button>
+        </div>
+
+        <div id="danger-step-verify" style="display:none;">
+          <div class="admin-empty" style="text-align:left; padding:0 0 12px;">
+            Код прислан тебе личным сообщением от этого же бота в Telegram —
+            действует 5 минут. Введи его ниже.
+          </div>
+          <input type="text" class="field-input" id="danger-code-input" placeholder="000000" maxlength="6" inputmode="numeric" autocomplete="off" style="margin-bottom:10px; letter-spacing:6px; text-align:center; font-size:20px; font-family:'Bebas Neue',sans-serif;">
+          <button class="btn btn-live" id="btn-danger-reset" style="width:100%;" disabled>Подтвердить и сбросить всё</button>
+          <button class="btn btn-line" id="btn-danger-resend-code" style="width:100%; margin-top:8px;">Прислать код ещё раз</button>
+        </div>
+
         <div class="admin-empty" id="danger-reset-result" style="display:none; margin-top:14px;"></div>
       </div>
 
@@ -942,25 +958,30 @@
     }).catch((err) => { console.error(err); alert('Не удалось удалить ивент'); });
   });
 
-  // ===== опасная зона: полный сброс перед бета-тестом =====
+  // ===== "Правила платформы" — она же опасная зона: полный сброс перед
+  // бета-тестом =====
   // Стирает историю боёв (matches/battles/queue/refereeQueue) и обнуляет у
   // всех игроков очки/статистику/значки/Stars — но НЕ трогает сами
   // аккаунты (имя, playerId, role) и НЕ трогает friends/friendRequests.
   //
   // Вкладку видят все, у кого есть доступ к панели (moderator/admin/
-  // superadmin) — а не только superadmin, как было раньше. Вместо этого
-  // право реально воспользоваться кнопкой проверяется живым запросом к
-  // базе КАЖДЫЙ РАЗ при открытии вкладки (а не один раз при входе в
-  // панель, как myRole) — так роль, отозванную уже после открытия панели,
-  // не проигнорируем по старому кэшу.
+  // superadmin) — а не только superadmin. Право реально воспользоваться
+  // кнопкой проверяется живым запросом к базе КАЖДЫЙ РАЗ при открытии
+  // вкладки (а не один раз при входе в панель, как myRole) — так роль,
+  // отозванную уже после открытия панели, не проигнорируем по старому кэшу.
   //
-  // database.rules.json сейчас разрешает запись всем без исключения (см.
-  // README) — то, что кнопка вообще работает только после этой проверки,
-  // чисто UI-барьер, а не настоящая защита. Поэтому вторая линия обороны —
-  // явная фраза-подтверждение, которую нужно набрать вручную, прежде чем
-  // кнопка вообще станет нажимаемой.
-  const RESET_CONFIRM_PHRASE = 'СБРОСИТЬ';
+  // Второй барьер — уже не просто фраза, которую человек вводит сам себе
+  // (это ничего не защищает, если он и так уже открыл эту вкладку), а
+  // одноразовый код: эта страница только ЗАПРАШИВАЕТ его (пишет заявку в
+  // resetConfirmations/<telegramId>), а фактически присылает — отдельный
+  // процесс бота (bot/index.js), личным сообщением в тот же Telegram-чат.
+  // Без доступа к этому чату код не получить, даже имея открытую вкладку
+  // панели в браузере. database.rules.json всё ещё разрешает запись всем
+  // без исключения (см. README) — так что технически можно дописать код
+  // в базу и вручную, минуя бота, но это уже требует отдельных
+  // целенаправленных действий, а не случайного клика по кнопке.
   let dangerZoneVerifiedRole = null;
+  const RESET_CODE_TTL_MS = 5 * 60 * 1000;
 
   function openDangerZone() {
     dangerZoneVerifiedRole = null;
@@ -987,24 +1008,57 @@
   }
 
   function resetDangerZoneForm() {
-    document.getElementById('reset-confirm-input').value = '';
+    document.getElementById('danger-step-request').style.display = 'block';
+    document.getElementById('danger-step-verify').style.display = 'none';
+    document.getElementById('danger-code-input').value = '';
     document.getElementById('btn-danger-reset').disabled = true;
-    document.getElementById('btn-danger-reset').textContent = 'Сбросить всё перед бета-тестом';
+    document.getElementById('btn-danger-reset').textContent = 'Подтвердить и сбросить всё';
     document.getElementById('danger-reset-result').style.display = 'none';
   }
-  document.getElementById('reset-confirm-input').addEventListener('input', (e) => {
-    document.getElementById('btn-danger-reset').disabled = e.target.value.trim().toUpperCase() !== RESET_CONFIRM_PHRASE;
+
+  function sendResetCode() {
+    // 6 цифр — этого достаточно: код одноразовый, живёт 5 минут и приходит
+    // только в личку конкретному telegramId, это не пароль для перебора
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    db.ref('resetConfirmations/' + myTelegramId).set({ code, createdAt: Date.now(), used: false }).then(() => {
+      document.getElementById('danger-step-request').style.display = 'none';
+      document.getElementById('danger-step-verify').style.display = 'block';
+      document.getElementById('danger-code-input').value = '';
+      document.getElementById('btn-danger-reset').disabled = true;
+      document.getElementById('danger-code-input').focus();
+    }).catch((err) => { console.error(err); alert('Не удалось запросить код: ' + (err.message || err)); });
+  }
+  document.getElementById('btn-danger-send-code').addEventListener('click', sendResetCode);
+  document.getElementById('btn-danger-resend-code').addEventListener('click', sendResetCode);
+
+  document.getElementById('danger-code-input').addEventListener('input', (e) => {
+    document.getElementById('btn-danger-reset').disabled = e.target.value.trim().length !== 6;
   });
 
   document.getElementById('btn-danger-reset').addEventListener('click', async () => {
     if (dangerZoneVerifiedRole !== 'superadmin') return; // на случай подделки клика мимо проверки выше
-    if (document.getElementById('reset-confirm-input').value.trim().toUpperCase() !== RESET_CONFIRM_PHRASE) return;
+    const enteredCode = document.getElementById('danger-code-input').value.trim();
+    if (enteredCode.length !== 6) return;
     const btn = document.getElementById('btn-danger-reset');
     const resultEl = document.getElementById('danger-reset-result');
     btn.disabled = true;
-    btn.textContent = 'Сбрасываю…';
+    btn.textContent = 'Проверяю код…';
     resultEl.style.display = 'none';
     try {
+      const codeSnap = await db.ref('resetConfirmations/' + myTelegramId).once('value');
+      const codeData = codeSnap.val();
+      const isFresh = codeData && !codeData.used && (Date.now() - codeData.createdAt) < RESET_CODE_TTL_MS;
+      if (!isFresh || codeData.code !== enteredCode) {
+        alert('Код неверный, уже использован или истёк (действует 5 минут) — запроси новый.');
+        btn.textContent = 'Подтвердить и сбросить всё';
+        btn.disabled = false;
+        return;
+      }
+      // помечаем сразу использованным — код одноразовый, повторно
+      // применить тот же нельзя, даже если его кто-то перехватил
+      await db.ref('resetConfirmations/' + myTelegramId).update({ used: true });
+
+      btn.textContent = 'Сбрасываю…';
       const usersSnap = await db.ref('users').once('value');
       const users = usersSnap.val() || {};
       const userKeys = Object.keys(users);
@@ -1027,7 +1081,8 @@
         `Сброшены очки/статистика/значки у ${userKeys.length} игроков; удалены matches/battles/queue/refereeQueue`);
       resultEl.textContent = `Готово — сброшено ${userKeys.length} игроков, вся история боёв удалена.`;
       resultEl.style.display = 'block';
-      document.getElementById('reset-confirm-input').value = '';
+      document.getElementById('danger-step-verify').style.display = 'none';
+      document.getElementById('danger-step-request').style.display = 'block';
       // если сейчас открыта чья-то карточка — обновим показанные в ней
       // очки/статистику, а то они останутся висеть старыми до нового поиска
       if (foundUserKey) {
@@ -1036,9 +1091,7 @@
     } catch (err) {
       console.error(err);
       alert('Не удалось выполнить сброс: ' + (err.message || err));
-    } finally {
-      btn.textContent = 'Сбросить всё перед бета-тестом';
-      // намеренно НЕ разблокируем кнопку обратно — надо снова набрать фразу
+      btn.textContent = 'Подтвердить и сбросить всё';
     }
   });
 </script>
