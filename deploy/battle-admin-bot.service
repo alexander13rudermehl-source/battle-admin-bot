@@ -1,0 +1,27 @@
+# systemd-юнит для постоянного запуска бота на голой VM (например, Google
+# Cloud Always Free e2-micro) — держит процесс живым, автоматически
+# перезапускает при падении и после перезагрузки сервера.
+#
+# Установка (см. README → "Google Cloud Always Free"):
+#   sudo cp deploy/battle-admin-bot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now battle-admin-bot
+#
+# Логи: journalctl -u battle-admin-bot -f
+
+[Unit]
+Description=BATTLE admin bot (Telegram long polling)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# путь должен совпадать с тем, куда реально склонирован репозиторий на VM
+WorkingDirectory=/opt/battle-admin-bot
+ExecStart=/usr/bin/node bot/index.js
+Restart=always
+RestartSec=5
+User=battlebot
+
+[Install]
+WantedBy=multi-user.target

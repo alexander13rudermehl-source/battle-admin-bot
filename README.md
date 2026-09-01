@@ -108,7 +108,69 @@ npm start
 Работает, пока открыт этот терминал/сессия — годится проверить, что бот
 вообще запускается и токен верный, но не для реальной постоянной работы.
 
-#### Railway (рекомендуемый вариант — есть бесплатный тариф)
+#### Google Cloud Always Free (рекомендуемый бесплатный вариант)
+
+У Google Cloud есть постоянно бесплатный (не "trial", не сгорает через
+месяц) инстанс **e2-micro** — этого с большим запасом хватает для
+long-polling бота, который просто ждёт сообщений и изредка читает базу.
+Карта при регистрации нужна для верификации аккаунта, но пока вы не
+выходите за рамки Always Free — списаний не будет.
+
+1. Зайдите на [console.cloud.google.com](https://console.cloud.google.com/),
+   создайте (или выберите) проект.
+2. **Compute Engine → VM instances → Create Instance**:
+   - Имя: `battle-admin-bot`.
+   - Регион — обязательно один из `us-west1`, `us-central1` или `us-east1`
+     (только они входят в Always Free для e2-micro; другие регионы уже
+     платные).
+   - Тип машины: `e2-micro`.
+   - Загрузочный диск: Debian 12 (по умолчанию), диск можно оставить
+     стандартный 10 ГБ (лимит Always Free — до 30 ГБ standard persistent
+     disk).
+   - Входящий трафик открывать не нужно — бот сам стучится наружу к
+     Telegram/Firebase, входящих подключений не принимает.
+3. После создания нажмите кнопку **SSH** рядом с инстансом в консоли —
+   откроется терминал прямо в браузере, ничего локально настраивать не
+   нужно.
+4. В этом терминале:
+   ```bash
+   # Node.js 20.x
+   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+   sudo apt-get install -y nodejs git
+
+   # отдельный системный пользователь, чтобы бот не работал от root
+   sudo useradd -r -s /usr/sbin/nologin battlebot || true
+
+   sudo git clone https://github.com/alexander13rudermehl-source/battle-admin-bot /opt/battle-admin-bot
+   sudo chown -R battlebot:battlebot /opt/battle-admin-bot
+   cd /opt/battle-admin-bot
+   sudo -u battlebot npm install --omit=dev
+
+   sudo -u battlebot cp .env.example .env
+   sudo nano .env   # вписать реальные BOT_TOKEN и MINI_APP_URL, сохранить (Ctrl+O, Enter, Ctrl+X)
+
+   sudo cp deploy/battle-admin-bot.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now battle-admin-bot
+   ```
+5. Проверить, что поднялось:
+   ```bash
+   sudo systemctl status battle-admin-bot
+   journalctl -u battle-admin-bot -f
+   ```
+   Должна быть строка `Бот запущен (long polling). Mini App: ...` и
+   статус `active (running)`. `enable` уже позаботился о том, чтобы бот
+   поднимался сам после перезагрузки VM, а `Restart=always` в юните —
+   после падения процесса.
+6. Чтобы обновить код после новых коммитов в репозитории:
+   ```bash
+   cd /opt/battle-admin-bot
+   sudo -u battlebot git pull
+   sudo -u battlebot npm install --omit=dev
+   sudo systemctl restart battle-admin-bot
+   ```
+
+#### Railway (платно после пробного периода)
 
 1. Зайдите на [railway.app](https://railway.app), New Project → **Deploy from
    GitHub repo** → выберите этот репозиторий (`battle-admin-bot`).
