@@ -10,9 +10,12 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>БАТТЛ — Админ-панель</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+  /* Утилитарный интерфейс инструмента, а не витрины: системный шрифт вместо
+     брендовых Bebas Neue/Inter, некрупный единый радиус вместо скруглений
+     "в таблетку", один плоский акцентный цвет вместо золота с градиентами.
+     --gold/--live имена переменных оставлены как есть (их много где
+     используют), поменялись только значения и то, как их применяют. */
   :root{
     --bg: #0B0B0D;
     --panel: #17171B;
@@ -20,24 +23,24 @@
     --line: #2A2A30;
     --text: #F2F1EE;
     --muted: #8A8A92;
-    --live: #FF3D2E;
-    --live-dark: #B01F16;
-    --gold: #F2B705;
+    --live: #E5493D;
+    --gold: #4C82F7;
+    --radius: 5px;
   }
   *{ box-sizing:border-box; margin:0; padding:0; }
-  html,body{ background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; min-height:100%; -webkit-font-smoothing:antialiased; }
+  html,body{ background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; min-height:100%; -webkit-font-smoothing:antialiased; }
   body{ display:flex; justify-content:center; padding:16px 0 40px; }
   .wrap{ width:100%; max-width:460px; padding:0 16px; }
 
   .topbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
-  .brand{ font-family:'Bebas Neue',sans-serif; font-size:22px; letter-spacing:2px; }
+  .brand{ font-size:15px; font-weight:700; }
   .brand span{ color:var(--live); }
   .me{ font-size:11px; color:var(--muted); text-align:right; line-height:1.4; }
   .me b{ color:var(--text); font-weight:600; }
 
-  .tabs{ display:flex; gap:6px; background:var(--panel-2); padding:4px; border-radius:12px; margin-bottom:16px; }
-  .tab{ flex:1; text-align:center; padding:9px 0; font-size:13px; font-weight:600; border-radius:9px; cursor:pointer; color:var(--muted); user-select:none; }
-  .tab.active{ background:var(--panel); color:var(--text); }
+  .tabs{ display:flex; gap:2px; border-bottom:1px solid var(--line); margin-bottom:16px; overflow-x:auto; }
+  .tab{ padding:9px 11px; font-size:12.5px; font-weight:600; cursor:pointer; color:var(--muted); user-select:none; border-bottom:2px solid transparent; white-space:nowrap; }
+  .tab.active{ color:var(--text); border-bottom-color:var(--gold); }
 
   .screen{ display:none; }
   .screen.active{ display:block; }
@@ -48,65 +51,65 @@
   .subview.active{ display:block; }
 
   .center-msg{ min-height:60vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:32px 12px; }
-  .center-msg .big{ font-family:'Bebas Neue',sans-serif; font-size:26px; letter-spacing:1px; margin-bottom:10px; }
+  .center-msg .big{ font-size:18px; font-weight:700; margin-bottom:10px; }
   .center-msg .small{ color:var(--muted); font-size:13.5px; line-height:1.5; max-width:280px; }
   .center-msg.denied .big{ color:var(--live); }
 
-  .section-label{ font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--muted); margin:18px 0 10px; }
+  .section-label{ font-size:11px; letter-spacing:0.3px; text-transform:uppercase; color:var(--muted); margin:18px 0 10px; }
   .section-label:first-child{ margin-top:0; }
 
   .admin-search{ display:flex; gap:8px; margin-bottom:14px; }
-  .admin-search input{ flex:1; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; color:var(--text); font-size:14px; font-family:'Inter',sans-serif; min-width:0; }
+  .admin-search input{ flex:1; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:10px 12px; color:var(--text); font-size:14px; min-width:0; }
   .admin-search input::placeholder{ color:var(--muted); }
-  .admin-search button{ background:var(--gold); color:#0B0B0D; border:none; border-radius:12px; padding:0 18px; font-family:'Bebas Neue',sans-serif; font-size:14px; letter-spacing:1px; cursor:pointer; }
+  .admin-search button{ background:var(--gold); color:#fff; border:none; border-radius:var(--radius); padding:0 16px; font-size:13px; font-weight:600; cursor:pointer; }
 
   button{ font-family:inherit; }
 
-  .list-toggle{ width:100%; margin-bottom:16px; background:var(--panel); border:1.5px solid var(--line); color:var(--text); border-radius:14px; padding:13px 14px; font-family:'Inter',sans-serif; font-size:13px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:space-between; }
-  .count-badge{ display:inline-flex; min-width:24px; height:24px; padding:0 7px; align-items:center; justify-content:center; border-radius:999px; background:var(--panel-2); border:1px solid var(--line); color:var(--gold); font-size:11px; margin-left:9px; }
+  .list-toggle{ width:100%; margin-bottom:16px; background:var(--panel); border:1px solid var(--line); color:var(--text); border-radius:var(--radius); padding:11px 12px; font-size:13px; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:space-between; }
+  .count-badge{ display:inline-flex; min-width:22px; height:20px; padding:0 6px; align-items:center; justify-content:center; border-radius:var(--radius); background:var(--panel-2); border:1px solid var(--line); color:var(--text); font-size:11px; margin-left:9px; }
   .chevron{ font-size:16px; transition:transform .18s ease; }
 
   .admin-empty{ text-align:center; color:var(--muted); font-size:13px; padding:20px 0; }
 
-  .user-row{ display:flex; align-items:center; gap:12px; padding:10px 12px; background:var(--panel); border:1px solid var(--line); border-radius:12px; cursor:pointer; margin-bottom:8px; }
-  .user-row .u-avatar{ width:36px; height:36px; border-radius:50%; background:var(--panel-2); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-family:'Bebas Neue',sans-serif; font-size:13px; flex-shrink:0; position:relative; background-size:cover; background-position:center; }
-  .user-row .u-online-dot{ position:absolute; bottom:-1px; right:-1px; width:10px; height:10px; border-radius:50%; background:#3ED598; border:2px solid var(--panel); display:none; }
+  .user-row{ display:flex; align-items:center; gap:12px; padding:9px 11px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); cursor:pointer; margin-bottom:6px; }
+  .user-row .u-avatar{ width:32px; height:32px; border-radius:50%; background:var(--panel-2); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex-shrink:0; position:relative; background-size:cover; background-position:center; }
+  .user-row .u-online-dot{ position:absolute; bottom:-1px; right:-1px; width:9px; height:9px; border-radius:50%; background:#3ED598; border:2px solid var(--panel); display:none; }
   .user-row.online .u-online-dot{ display:block; }
   .user-row .u-info{ flex:1; min-width:0; }
   .user-row .u-name{ font-size:13.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .user-row .u-id{ font-size:11.5px; color:var(--muted); }
-  .u-role-badge{ font-size:10px; letter-spacing:0.5px; text-transform:uppercase; padding:3px 8px; border-radius:100px; flex-shrink:0; }
+  .u-role-badge{ font-size:10px; letter-spacing:0.3px; text-transform:uppercase; padding:2px 6px; border-radius:var(--radius); flex-shrink:0; }
   .u-role-badge.role-user{ background:var(--panel-2); color:var(--muted); }
   .u-role-badge.role-moderator{ background:rgba(108,124,255,0.15); color:#6C7CFF; }
-  .u-role-badge.role-admin{ background:rgba(255,61,46,0.15); color:var(--live); }
-  .u-role-badge.role-superadmin{ background:rgba(242,183,5,0.15); color:var(--gold); }
+  .u-role-badge.role-admin{ background:rgba(229,73,61,0.15); color:var(--live); }
+  .u-role-badge.role-superadmin{ background:rgba(76,130,247,0.15); color:var(--gold); }
 
-  .badge{ display:inline-block; font-size:10px; letter-spacing:0.5px; text-transform:uppercase; padding:2px 7px; border-radius:100px; }
-  .badge.live{ background:rgba(255,61,46,0.15); color:var(--live); }
+  .badge{ display:inline-block; font-size:10px; letter-spacing:0.3px; text-transform:uppercase; padding:2px 6px; border-radius:var(--radius); }
+  .badge.live{ background:rgba(229,73,61,0.15); color:var(--live); }
 
-  .badge-pill{ display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600; padding:6px 12px; border-radius:100px; background:var(--panel-2); border:1px solid var(--line); }
+  .badge-pill{ display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600; padding:5px 10px; border-radius:var(--radius); background:var(--panel-2); border:1px solid var(--line); }
   .badge-pill .emoji{ font-size:15px; line-height:1; }
-  .badge-pill.awarded{ border-color: var(--gold); background: rgba(242,183,5,0.1); }
+  .badge-pill.awarded{ border-color: var(--gold); background: rgba(76,130,247,0.1); }
   .badge-pill.pick{ cursor:pointer; background:var(--panel-2); }
-  .badge-pill.pick.on{ border-color: var(--gold); background: rgba(242,183,5,0.15); color: var(--gold); }
+  .badge-pill.pick.on{ border-color: var(--gold); background: rgba(76,130,247,0.15); color: var(--gold); }
   .badge-pill .remove{ opacity:0.6; font-weight:700; }
 
-  .admin-result{ background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; display:none; margin-top:4px; }
-  .admin-result .r-avatar{ width:56px; height:56px; border-radius:50%; background:var(--panel-2); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-family:'Bebas Neue',sans-serif; font-size:18px; margin-bottom:12px; background-size:cover; background-position:center; }
+  .admin-result{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:14px; display:none; margin-top:4px; }
+  .admin-result .r-avatar{ width:48px; height:48px; border-radius:50%; background:var(--panel-2); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:700; margin-bottom:12px; background-size:cover; background-position:center; }
   .admin-result .r-name{ font-size:15px; font-weight:700; margin-bottom:2px; }
   .admin-result .r-id{ font-size:12.5px; color:var(--muted); margin-bottom:14px; }
   .r-toggle-row{ display:flex; flex-direction:column; align-items:stretch; gap:10px; padding-top:12px; border-top:1px solid var(--line); }
-  .r-toggle-label{ font-size:14px; font-weight:600; }
+  .r-toggle-label{ font-size:13px; font-weight:600; }
 
   .stat-field{ font-size:11px; color:var(--muted); }
-  .stat-field input{ width:100%; box-sizing:border-box; margin-top:4px; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:9px; color:var(--text); font-family:'Inter',sans-serif; }
+  .stat-field input{ width:100%; box-sizing:border-box; margin-top:4px; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:9px; color:var(--text); }
 
-  .btn{ border:none; border-radius:10px; padding:11px; font-family:'Inter',sans-serif; font-size:13px; font-weight:600; cursor:pointer; }
-  .btn-gold{ background:var(--gold); color:#0B0B0D; font-family:'Bebas Neue',sans-serif; font-size:14px; letter-spacing:1px; padding:12px; }
+  .btn{ border:none; border-radius:var(--radius); padding:10px; font-size:13px; font-weight:600; cursor:pointer; }
+  .btn-gold{ background:var(--gold); color:#fff; }
   .btn-line{ background:var(--panel-2); border:1px solid var(--line); color:var(--text); }
-  .btn-live{ background:linear-gradient(135deg,var(--live),var(--live-dark)); color:#fff; font-family:'Bebas Neue',sans-serif; font-size:14px; letter-spacing:1px; padding:12px; }
+  .btn-live{ background:var(--live); color:#fff; }
 
-  .log-row{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:8px; }
+  .log-row{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:11px 13px; margin-bottom:7px; }
   .log-row .l-title{ font-size:13px; font-weight:600; margin-bottom:3px; }
   .log-row .l-body{ font-size:12px; color:var(--muted); line-height:1.5; }
   .log-row .l-time{ font-size:11px; color:var(--muted); margin-top:4px; }
@@ -114,15 +117,15 @@
   .back-link{ display:inline-flex; align-items:center; gap:6px; color:var(--muted); font-size:12.5px; cursor:pointer; margin-bottom:12px; }
 
   .field-label{ font-size:12px; color:var(--muted); margin-bottom:5px; display:block; }
-  .field-input{ width:100%; box-sizing:border-box; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; color:var(--text); font-family:'Inter',sans-serif; font-size:13.5px; resize:vertical; }
+  .field-input{ width:100%; box-sizing:border-box; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:9px 11px; color:var(--text); font-size:13.5px; resize:vertical; }
   .field-block{ margin-bottom:14px; }
-  .event-preview{ background:var(--panel); border:1px solid var(--line); border-radius:14px; overflow:hidden; margin-bottom:16px; }
+  .event-preview{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; margin-bottom:16px; }
   .event-preview img{ width:100%; height:110px; object-fit:cover; display:block; background:var(--panel-2); }
   .event-preview .ep-empty{ height:110px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:12.5px; }
-  .event-status{ font-size:12.5px; padding:10px 12px; border-radius:10px; margin-bottom:14px; }
+  .event-status{ font-size:12.5px; padding:9px 11px; border-radius:var(--radius); margin-bottom:14px; }
   .event-status.on{ background:rgba(62,213,152,0.12); color:#3ED598; }
   .event-status.off{ background:var(--panel-2); color:var(--muted); }
-  .event-admin-row{ display:flex; align-items:center; gap:10px; padding:11px 12px; background:var(--panel); border:1px solid var(--line); border-radius:12px; cursor:pointer; margin-bottom:8px; }
+  .event-admin-row{ display:flex; align-items:center; gap:10px; padding:10px 11px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); cursor:pointer; margin-bottom:7px; }
   .event-admin-row.editing{ border-color:var(--gold); }
   .event-admin-row .ea-info{ flex:1; min-width:0; }
   .event-admin-row .ea-title{ font-size:13.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -210,8 +213,8 @@
           <div id="badge-manage-block" style="display:none; flex-direction:column; gap:8px;">
             <div id="badge-catalog" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
             <div style="display:flex; gap:8px;">
-              <input type="text" id="new-badge-emoji" placeholder="🧪" maxlength="4" style="width:56px; text-align:center; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:9px; color:var(--text); font-size:16px;">
-              <input type="text" id="new-badge-label" placeholder="Название значка" style="flex:1; min-width:0; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:9px 12px; color:var(--text); font-family:'Inter',sans-serif; font-size:13px;">
+              <input type="text" id="new-badge-emoji" placeholder="🧪" maxlength="4" style="width:56px; text-align:center; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:9px; color:var(--text); font-size:16px;">
+              <input type="text" id="new-badge-label" placeholder="Название значка" style="flex:1; min-width:0; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:9px 12px; color:var(--text); font-size:13px;">
             </div>
             <button class="btn btn-line" id="btn-create-badge">+ Создать значок</button>
           </div>
@@ -288,8 +291,8 @@
           <option value="">Без значка</option>
         </select>
         <div style="display:flex; gap:8px;">
-          <input type="text" id="event-new-badge-emoji" placeholder="🎉" maxlength="4" style="width:56px; text-align:center; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:9px; color:var(--text); font-size:16px;">
-          <input type="text" id="event-new-badge-label" placeholder="Название нового значка" style="flex:1; min-width:0; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:9px 12px; color:var(--text); font-family:'Inter',sans-serif; font-size:13px;">
+          <input type="text" id="event-new-badge-emoji" placeholder="🎉" maxlength="4" style="width:56px; text-align:center; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:9px; color:var(--text); font-size:16px;">
+          <input type="text" id="event-new-badge-label" placeholder="Название нового значка" style="flex:1; min-width:0; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:9px 12px; color:var(--text); font-size:13px;">
         </div>
         <button class="btn btn-line" id="btn-event-create-badge" style="width:100%; margin-top:8px;">+ Создать и выбрать значок</button>
       </div>
@@ -1188,7 +1191,7 @@
     const emptyEl = document.getElementById('clans-pending-empty');
     emptyEl.style.display = list.length ? 'none' : 'block';
     el.innerHTML = list.map((c) => `
-      <div class="clan-review-card" data-code="${c.code}" style="background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:12px;">
+      <div class="clan-review-card" data-code="${c.code}" style="background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:14px; margin-bottom:12px;">
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
           <div style="font-size:24px; flex-shrink:0;">${escapeHtml(c.emoji || '🛡')}</div>
           <div style="flex:1; min-width:0;">
@@ -1220,7 +1223,7 @@
     const emptyEl = document.getElementById('clan-chats-pending-empty');
     emptyEl.style.display = list.length ? 'none' : 'block';
     el.innerHTML = list.map((c) => `
-      <div class="clan-chat-review-card" data-code="${c.code}" style="background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:12px;">
+      <div class="clan-chat-review-card" data-code="${c.code}" style="background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:14px; margin-bottom:12px;">
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
           <div style="font-size:24px; flex-shrink:0;">${escapeHtml(c.emoji || '🛡')}</div>
           <div style="flex:1; min-width:0;">
