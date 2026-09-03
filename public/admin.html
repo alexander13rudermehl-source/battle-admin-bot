@@ -187,6 +187,7 @@
       <div class="tab" data-tab="event">Ивент</div>
       <div class="tab" data-tab="logs">Журнал</div>
       <div class="tab" data-tab="clans">Кланы</div>
+      <div class="tab" data-tab="beta">Заявки</div>
       <!-- видна всем, у кого вообще есть доступ к панели (moderator/admin/
            superadmin) — а вот воспользоваться получится только у
            superadmin, это проверяется заново при каждом открытии вкладки
@@ -387,6 +388,20 @@
       <div class="admin-empty" id="clan-chats-pending-empty" style="display:none;">Нет ссылок, ожидающих проверки</div>
     </div>
 
+    <!-- ===== заявки на закрытый бета-тест =====
+         Пока config/closedBeta включён (тумблер в "Правилах платформы"),
+         index.html не создаёт аккаунт новым визитёрам сам — вместо этого
+         пишет betaApplications/<telegramId> и показывает экран заявки.
+         Одобрение здесь и создаёт настоящий users/<telegramId> (с теми же
+         полями по умолчанию, что и на самом сайте при первом визите — см.
+         approveBetaApplication). Вкладка видна только тем, у кого включено
+         право "beta" (см. applyRoleUI/canManageBeta). -->
+    <div class="subview" data-panel="beta" id="panel-beta">
+      <div class="section-label">Заявки на рассмотрении</div>
+      <div id="beta-applications-list"></div>
+      <div class="admin-empty" id="beta-applications-empty" style="display:none;">Нет заявок, ожидающих проверки</div>
+    </div>
+
     <!-- ===== "Правила платформы" — на самом деле опасная зона (полный
          сброс перед бета-тестом), название вкладки нарочно нейтральное.
          Видят её все, у кого вообще есть доступ к панели (moderator/admin/
@@ -495,6 +510,21 @@
           <button class="btn btn-line" id="btn-save-maintenance-message" style="width:100%; margin-top:8px;">Сохранить сообщение</button>
         </div>
 
+        <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--line);">
+          <label class="field-label">Закрытый бета-тест</label>
+          <div class="admin-empty" style="text-align:left; padding:0 0 10px;">
+            Новым визитёрам (у кого ещё нет аккаунта) вместо мгновенного
+            входа показывается экран заявки — принять их сможет только
+            тот, у кого включено право «Заявки на закрытый бета-тест» (см.
+            вкладку «Заявки»). У кого аккаунт уже есть — их не касается,
+            заходят как обычно.
+          </div>
+          <div class="toggle-row" id="toggle-closed-beta">
+            <div class="toggle-check"></div>
+            <div class="toggle-label">Включён</div>
+          </div>
+        </div>
+
         <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--live);">
           <label class="field-label" style="color:var(--live);">Аварийный режим</label>
           <div class="admin-empty" style="text-align:left; padding:0 0 10px; color:var(--live);">
@@ -556,10 +586,11 @@
     { id: 'bans', label: 'Бан и ограничения игроков' },
     { id: 'clans', label: 'Модерация кланов и ссылок на чаты' },
     { id: 'stats', label: 'Ивент-баннер и статистика игрока' },
-    { id: 'badges', label: 'Значки-награды' }
+    { id: 'badges', label: 'Значки-награды' },
+    { id: 'beta', label: 'Заявки на закрытый бета-тест' }
   ];
-  const ALL_PERMISSIONS_OFF = { bans: false, clans: false, stats: false, badges: false };
-  const ALL_PERMISSIONS_ON = { bans: true, clans: true, stats: true, badges: true };
+  const ALL_PERMISSIONS_OFF = { bans: false, clans: false, stats: false, badges: false, beta: false };
+  const ALL_PERMISSIONS_ON = { bans: true, clans: true, stats: true, badges: true, beta: true };
   function resolvePermissions(user) {
     if (!user) return { ...ALL_PERMISSIONS_OFF };
     if (user.role === 'superadmin') return { ...ALL_PERMISSIONS_ON }; // супердоступ — всегда всё, это не настраивается
@@ -635,6 +666,7 @@
       if (tab.dataset.tab === 'event') loadEventsAdminList();
       if (tab.dataset.tab === 'danger') openDangerZone();
       if (tab.dataset.tab === 'clans') loadClansAdminPanel();
+      if (tab.dataset.tab === 'beta') loadBetaApplicationsPanel();
     });
   });
 
@@ -725,6 +757,7 @@
   function canManageEvent() { return myPermissions.stats; }
   function canManageClans() { return myPermissions.clans; }
   function canManageBans() { return myPermissions.bans; }
+  function canManageBeta() { return myPermissions.beta; }
   // выдача ролей/прав — самое чувствительное действие в панели (может
   // выдать superadmin или любое право кому угодно, включая себя), поэтому
   // только Супердоступ, без исключений и без отдельного переключателя. См.
@@ -836,6 +869,8 @@
     if (eventTab) eventTab.style.display = canManageEvent() ? '' : 'none';
     const clansTab = document.querySelector('.tab[data-tab="clans"]');
     if (clansTab) clansTab.style.display = canManageClans() ? '' : 'none';
+    const betaTab = document.querySelector('.tab[data-tab="beta"]');
+    if (betaTab) betaTab.style.display = canManageBeta() ? '' : 'none';
   }
 
   // ===== значки-награды =====
@@ -1003,7 +1038,10 @@
     admin_permission_changed: 'Изменено право администратора',
     maintenance_toggled: 'Режим обслуживания переключён',
     maintenance_message_changed: 'Сообщение режима обслуживания изменено',
-    emergency_lockdown_toggled: 'Аварийный режим переключён'
+    emergency_lockdown_toggled: 'Аварийный режим переключён',
+    closed_beta_toggled: 'Закрытый бета-тест переключён',
+    beta_application_approved: 'Заявка на бета-тест одобрена',
+    beta_application_rejected: 'Заявка на бета-тест отклонена'
   };
 
   function logAction(actionType, targetKey, targetName, targetPlayerId, details) {
@@ -1360,11 +1398,13 @@
     Promise.all([
       db.ref('config/maintenanceMode').once('value'),
       db.ref('config/maintenanceMessage').once('value'),
-      db.ref('config/emergencyLockdown').once('value')
-    ]).then(([modeSnap, msgSnap, lockdownSnap]) => {
+      db.ref('config/emergencyLockdown').once('value'),
+      db.ref('config/closedBeta').once('value')
+    ]).then(([modeSnap, msgSnap, lockdownSnap, closedBetaSnap]) => {
       document.getElementById('toggle-maintenance').classList.toggle('on', !!modeSnap.val());
       document.getElementById('maintenance-message-input').value = msgSnap.val() || '';
       document.getElementById('toggle-emergency').classList.toggle('on', !!lockdownSnap.val());
+      document.getElementById('toggle-closed-beta').classList.toggle('on', !!closedBetaSnap.val());
     }).catch((err) => console.error('Режимы платформы: загрузка', err));
   }
 
@@ -1552,6 +1592,17 @@
     }).catch((err) => { console.error(err); alert('Не удалось сохранить сообщение: ' + (err.message || err)); });
   });
 
+  document.getElementById('toggle-closed-beta').addEventListener('click', () => {
+    if (dangerZoneVerifiedRole !== 'superadmin') return; // на случай подделки клика мимо проверки выше
+    const toggle = document.getElementById('toggle-closed-beta');
+    const newVal = !toggle.classList.contains('on');
+    if (newVal && !confirm('Включить закрытый бета-тест? Новые визитёры без аккаунта увидят экран заявки вместо мгновенного входа.')) return;
+    db.ref('config/closedBeta').set(newVal).then(() => {
+      toggle.classList.toggle('on', newVal);
+      logAction('closed_beta_toggled', '—', '—', '—', newVal ? 'Включён' : 'Выключен');
+    }).catch((err) => { console.error(err); alert('Не удалось изменить режим закрытого бета-теста: ' + (err.message || err)); });
+  });
+
   document.getElementById('toggle-emergency').addEventListener('click', () => {
     if (dangerZoneVerifiedRole !== 'superadmin') return; // на случай подделки клика мимо проверки выше
     const toggle = document.getElementById('toggle-emergency');
@@ -1691,6 +1742,88 @@
       logAction('clan_chat_rejected', code, code, code, 'Причина: ' + reason);
       loadClansAdminPanel();
     }).catch((err) => alert('Не удалось отклонить ссылку: ' + (err.message || err)));
+  }
+
+  // ===== Заявки на закрытый бета-тест =====
+  // Пока config/closedBeta включён, index.html не создаёт users/<id> сам —
+  // одобрение заявки здесь и есть точка, где аккаунт реально появляется.
+  // Формат должен совпадать с тем, что index.html создаёт при обычном
+  // первом визите (playerId, role, points и т.д.) — см. resolveIdentity()
+  // там же.
+  function generatePlayerId() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // без похожих символов (0/O, 1/I) — как в index.html
+    let code = '';
+    for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    return 'PLR-' + code;
+  }
+
+  function loadBetaApplicationsPanel() {
+    db.ref('betaApplications').once('value').then((snap) => {
+      const apps = snap.val() || {};
+      const pending = Object.entries(apps).filter(([, a]) => (a.status || 'pending') === 'pending');
+      renderBetaApplicationsQueue(pending);
+    }).catch((err) => console.error('Заявки на бета: загрузка', err));
+  }
+
+  function renderBetaApplicationsQueue(entries) {
+    const el = document.getElementById('beta-applications-list');
+    const emptyEl = document.getElementById('beta-applications-empty');
+    emptyEl.style.display = entries.length ? 'none' : 'block';
+    el.innerHTML = entries.map(([telegramId, a]) => `
+      <div class="clan-review-card" data-uid="${telegramId}" style="background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:14px; margin-bottom:12px;">
+        <div style="font-size:14px; font-weight:700; margin-bottom:4px;">${escapeHtml(a.firstName || 'Игрок')}</div>
+        <div style="font-size:11px; color:var(--muted); margin-bottom:10px;">${escapeHtml(a.username || telegramId)} · заявка: ${a.requestedAt ? new Date(a.requestedAt).toLocaleString('ru-RU') : '—'}</div>
+        <textarea class="field-input beta-reject-reason" placeholder="Причина отказа — увидит заявитель" rows="2" style="margin-bottom:8px;"></textarea>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-gold beta-approve-btn" style="flex:1;">✓ Принять</button>
+          <button class="btn btn-live beta-reject-btn" style="flex:1;">✕ Отклонить</button>
+        </div>
+      </div>
+    `).join('');
+    el.querySelectorAll('.clan-review-card').forEach((card) => {
+      const uid = card.dataset.uid;
+      card.querySelector('.beta-approve-btn').addEventListener('click', () => approveBetaApplication(uid));
+      card.querySelector('.beta-reject-btn').addEventListener('click', () => {
+        const reason = card.querySelector('.beta-reject-reason').value.trim();
+        if (!reason) { alert('Укажи причину отказа — её увидит заявитель'); return; }
+        rejectBetaApplication(uid, reason);
+      });
+    });
+  }
+
+  function approveBetaApplication(telegramId) {
+    if (!canManageBeta()) return; // на случай подделки клика мимо скрытой вкладки
+    const appRef = db.ref('betaApplications/' + telegramId);
+    appRef.once('value').then((snap) => {
+      const app = snap.val() || {};
+      const userData = {
+        playerId: generatePlayerId(),
+        firstName: app.firstName || 'Игрок',
+        username: app.username || null,
+        role: 'user',
+        points: 1000, // ELO_BASELINE в index.html — держать в синхроне вручную
+        starsBalance: 0,
+        stats: { battles: 0, wins: 0, losses: 0, draws: 0, refereeBattles: 0, audienceLikes: 0 },
+        avatarData: null,
+        status: 'active',
+        restrictedUntil: null,
+        createdAt: Date.now()
+      };
+      return db.ref('users/' + telegramId).set(userData).then(() =>
+        appRef.update({ status: 'approved', decidedAt: Date.now() })
+      );
+    }).then(() => {
+      logAction('beta_application_approved', telegramId, '—', telegramId, 'Заявка одобрена, аккаунт создан');
+      loadBetaApplicationsPanel();
+    }).catch((err) => alert('Не удалось одобрить заявку: ' + (err.message || err)));
+  }
+
+  function rejectBetaApplication(telegramId, reason) {
+    if (!canManageBeta()) return; // на случай подделки клика мимо скрытой вкладки
+    db.ref('betaApplications/' + telegramId).update({ status: 'rejected', rejectionReason: reason, decidedAt: Date.now() }).then(() => {
+      logAction('beta_application_rejected', telegramId, '—', telegramId, 'Причина: ' + reason);
+      loadBetaApplicationsPanel();
+    }).catch((err) => alert('Не удалось отклонить заявку: ' + (err.message || err)));
   }
 </script>
 </body>
