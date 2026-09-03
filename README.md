@@ -165,16 +165,23 @@ Mini App не нужен. Сам сброс ("Правила платформы"
    ```
    BOT_TOKEN=<токен от BotFather>
    MINI_APP_URL=https://<ваш-проект>.vercel.app/admin.html
+   WEBHOOK_SECRET=<случайная строка, см. .env.example — например, вывод openssl rand -hex 24>
    ```
    (`<ваш-проект>` узнаете после первого деплоя — Vercel сам выдаёт домен
    вида `battle-admin-bot.vercel.app`; при необходимости `MINI_APP_URL`
-   потом можно поправить и передеплоить).
+   потом можно поправить и передеплоить). `WEBHOOK_SECRET` придумайте сами
+   один раз — то же самое значение понадобится в команде `setWebhook`
+   ниже; без него вебхук технически примет запрос от кого угодно, кто
+   угадает URL функции, а не только от настоящего Telegram.
 4. Нажмите **Deploy**. После первого успешного деплоя выполните
    ОДИН РАЗ (с любого компьютера — это просто прямые вызовы Telegram Bot
    API, не требуют доступа к самому проекту):
    ```bash
-   # подключить вебхук — теперь Telegram сам стучится в вашу функцию
-   curl "https://api.telegram.org/bot<BOT_TOKEN>/setWebhook?url=https://<ваш-проект>.vercel.app/api/telegram-webhook"
+   # подключить вебхук — теперь Telegram сам стучится в вашу функцию,
+   # и подписывает каждый запрос заголовком с этим секретом (сверяется
+   # в api/telegram-webhook.js) — используйте то же значение, что задали
+   # в WEBHOOK_SECRET на шаге 3 выше
+   curl "https://api.telegram.org/bot<BOT_TOKEN>/setWebhook?url=https://<ваш-проект>.vercel.app/api/telegram-webhook&secret_token=<тот же WEBHOOK_SECRET>"
 
    # команда /admin в меню бота
    curl -X POST "https://api.telegram.org/bot<BOT_TOKEN>/setMyCommands" \
@@ -198,6 +205,9 @@ Mini App не нужен. Сам сброс ("Правила платформы"
 Если бот не отвечает на `/start` — смотрите **Vercel → проект →
 Deployments → последний деплой → Functions → api/telegram-webhook** —
 там логи именно этого вызова, включая ошибки типа неверного `BOT_TOKEN`.
+Если в логах видно `401`/`unauthorized` — значит `secret_token` в команде
+`setWebhook` не совпадает с `WEBHOOK_SECRET` в Environment Variables;
+переустановите вебхук командой из шага 4 с правильным значением.
 
 #### Long polling — локально, для быстрой проверки (необязательно для продакшена)
 
