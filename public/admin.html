@@ -323,15 +323,14 @@
          входе в панель — так если роль сменили, пока вкладка админ-панели
          просто лежала открытой, старый доступ не сохранится.
 
-         Дальше — второй, куда более настоящий барьер, чем просто набрать
-         фразу самому себе: одноразовый код, который генерирует эта
-         страница (пишет в resetConfirmations/<telegramId>), но присылает
-         НЕ она сама, а serverless-функция /api/send-reset-code личным
-         сообщением в Telegram тому же telegramId (сама функция перечитывает
-         код и роль заново из базы, не доверяя телу запроса — см.
-         api/send-reset-code.js). Тот, у кого просто открыта эта вкладка в
-         браузере, кода не получит — он должен ещё и иметь доступ к тому
-         самому Telegram-аккаунту. -->
+         Дальше — второй барьер: секретный пароль сброса. В отличие от
+         первой версии (где фраза-подтверждение была захардкожена прямо в
+         этом JS — любой, кто открыл бы исходник страницы, увидел бы её),
+         пароль хранится в самой базе (config/resetSecret) и задаётся
+         ТОЛЬКО вручную через Firebase Console — той же рукой и тем же
+         способом, каким тут выдаются роли admin/superadmin (см. README).
+         В коде страницы этого пароля нет вообще, только сравнение с тем,
+         что реально лежит в базе на момент проверки. -->
     <div class="subview" data-panel="danger" id="panel-danger">
 
       <div class="center-msg" id="danger-checking" style="min-height:30vh;">
@@ -358,18 +357,12 @@
           бета-теста, когда вся текущая история — просто тестовый мусор.
         </div>
 
-        <div id="danger-step-request">
-          <button class="btn btn-line" id="btn-danger-send-code" style="width:100%;">📨 Отправить код подтверждения в Telegram</button>
-        </div>
-
-        <div id="danger-step-verify" style="display:none;">
-          <div class="admin-empty" style="text-align:left; padding:0 0 12px;">
-            Код прислан тебе личным сообщением от этого же бота в Telegram —
-            действует 5 минут. Введи его ниже.
-          </div>
-          <input type="text" class="field-input" id="danger-code-input" placeholder="000000" maxlength="6" inputmode="numeric" autocomplete="off" style="margin-bottom:10px; letter-spacing:6px; text-align:center; font-size:20px; font-family:'Bebas Neue',sans-serif;">
-          <button class="btn btn-live" id="btn-danger-reset" style="width:100%;" disabled>Подтвердить и сбросить всё</button>
-          <button class="btn btn-line" id="btn-danger-resend-code" style="width:100%; margin-top:8px;">Прислать код ещё раз</button>
+        <label class="field-label">Секретный пароль сброса (задан вручную в Firebase Console → config/resetSecret)</label>
+        <input type="password" class="field-input" id="danger-secret-input" placeholder="Пароль сброса" autocomplete="off" style="margin-bottom:10px;">
+        <button class="btn btn-live" id="btn-danger-reset" style="width:100%;">Подтвердить и сбросить всё</button>
+        <div class="admin-empty" id="danger-secret-missing" style="display:none; margin-top:10px; text-align:left; color:var(--live);">
+          config/resetSecret ещё не задан в базе — сброс невозможен, пока
+          кто-то не впишет его вручную через Firebase Console (см. README).
         </div>
 
         <div class="admin-empty" id="danger-reset-result" style="display:none; margin-top:14px;"></div>
@@ -972,20 +965,21 @@
   // вкладки (а не один раз при входе в панель, как myRole) — так роль,
   // отозванную уже после открытия панели, не проигнорируем по старому кэшу.
   //
-  // Второй барьер — уже не просто фраза, которую человек вводит сам себе
-  // (это ничего не защищает, если он и так уже открыл эту вкладку), а
-  // одноразовый код: эта страница только ЗАПРАШИВАЕТ его (пишет заявку в
-  // resetConfirmations/<telegramId>), а фактически присылает —
-  // serverless-функция /api/send-reset-code, личным сообщением в тот же
-  // Telegram-чат (см. api/send-reset-code.js — она не доверяет телу
-  // запроса и перечитывает код/роль заново из базы). Без доступа к этому
-  // чату код не получить, даже имея открытую вкладку панели в браузере.
-  // database.rules.json всё ещё разрешает запись всем без исключения (см.
-  // README) — так что технически можно дописать код в базу и вручную,
-  // минуя эту функцию, но это уже требует отдельных целенаправленных
-  // действий, а не случайного клика по кнопке.
+  // Второй барьер — секретный пароль сброса. Раньше (первая версия) фраза
+  // подтверждения была захардкожена прямо в этом JS — бесполезно, потому
+  // что любой, кто открыл бы исходник страницы, увидел бы её. Потом
+  // пробовали слать одноразовый код через Telegram-бота — но это требует
+  // постоянно работающего бота/хостинга (Railway/Vercel/...), а по
+  // запросу решили сделать проще: пароль хранится в самой базе
+  // (config/resetSecret) и задаётся ТОЛЬКО вручную через Firebase Console
+  // — тем же способом и той же рукой, что и роли admin/superadmin (см.
+  // README). В коде страницы этого пароля нет вообще — только сравнение с
+  // тем, что реально лежит в базе на момент проверки. database.rules.json
+  // всё ещё разрешает чтение всем без исключения (см. README) — так что
+  // это не защита от того, кто напрямую полезет в саму базу, но уже
+  // содержательный барьер против случайного/чужого клика по кнопке в
+  // самой панели.
   let dangerZoneVerifiedRole = null;
-  const RESET_CODE_TTL_MS = 5 * 60 * 1000;
 
   function openDangerZone() {
     dangerZoneVerifiedRole = null;
@@ -1012,69 +1006,37 @@
   }
 
   function resetDangerZoneForm() {
-    document.getElementById('danger-step-request').style.display = 'block';
-    document.getElementById('danger-step-verify').style.display = 'none';
-    document.getElementById('danger-code-input').value = '';
-    document.getElementById('btn-danger-reset').disabled = true;
+    document.getElementById('danger-secret-input').value = '';
+    document.getElementById('danger-secret-missing').style.display = 'none';
+    document.getElementById('btn-danger-reset').disabled = false;
     document.getElementById('btn-danger-reset').textContent = 'Подтвердить и сбросить всё';
     document.getElementById('danger-reset-result').style.display = 'none';
   }
 
-  function sendResetCode() {
-    // 6 цифр — этого достаточно: код одноразовый, живёт 5 минут и приходит
-    // только в личку конкретному telegramId, это не пароль для перебора.
-    // Сначала кладём код в базу, потом просим serverless-функцию
-    // /api/send-reset-code его доставить — сама функция ничего не берёт из
-    // тела запроса, кроме telegramId, и перечитывает код заново из базы
-    // (см. комментарий в самой функции, зачем это важно).
-    const code = String(Math.floor(100000 + Math.random() * 900000));
-    const sendBtn = document.getElementById('btn-danger-send-code');
-    sendBtn.disabled = true;
-    db.ref('resetConfirmations/' + myTelegramId).set({ code, createdAt: Date.now(), used: false })
-      .then(() => fetch('/api/send-reset-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ telegramId: myTelegramId })
-      }))
-      .then((res) => res.json().then((data) => { if (!res.ok || !data.ok) throw new Error(data.error || 'send failed'); }))
-      .then(() => {
-        document.getElementById('danger-step-request').style.display = 'none';
-        document.getElementById('danger-step-verify').style.display = 'block';
-        document.getElementById('danger-code-input').value = '';
-        document.getElementById('btn-danger-reset').disabled = true;
-        document.getElementById('danger-code-input').focus();
-      }).catch((err) => { console.error(err); alert('Не удалось отправить код: ' + (err.message || err)); })
-      .finally(() => { sendBtn.disabled = false; });
-  }
-  document.getElementById('btn-danger-send-code').addEventListener('click', sendResetCode);
-  document.getElementById('btn-danger-resend-code').addEventListener('click', sendResetCode);
-
-  document.getElementById('danger-code-input').addEventListener('input', (e) => {
-    document.getElementById('btn-danger-reset').disabled = e.target.value.trim().length !== 6;
-  });
-
   document.getElementById('btn-danger-reset').addEventListener('click', async () => {
     if (dangerZoneVerifiedRole !== 'superadmin') return; // на случай подделки клика мимо проверки выше
-    const enteredCode = document.getElementById('danger-code-input').value.trim();
-    if (enteredCode.length !== 6) return;
+    const enteredSecret = document.getElementById('danger-secret-input').value;
     const btn = document.getElementById('btn-danger-reset');
     const resultEl = document.getElementById('danger-reset-result');
+    document.getElementById('danger-secret-missing').style.display = 'none';
     btn.disabled = true;
-    btn.textContent = 'Проверяю код…';
+    btn.textContent = 'Проверяю пароль…';
     resultEl.style.display = 'none';
     try {
-      const codeSnap = await db.ref('resetConfirmations/' + myTelegramId).once('value');
-      const codeData = codeSnap.val();
-      const isFresh = codeData && !codeData.used && (Date.now() - codeData.createdAt) < RESET_CODE_TTL_MS;
-      if (!isFresh || codeData.code !== enteredCode) {
-        alert('Код неверный, уже использован или истёк (действует 5 минут) — запроси новый.');
+      const secretSnap = await db.ref('config/resetSecret').once('value');
+      const realSecret = secretSnap.val();
+      if (!realSecret) {
+        document.getElementById('danger-secret-missing').style.display = 'block';
         btn.textContent = 'Подтвердить и сбросить всё';
         btn.disabled = false;
         return;
       }
-      // помечаем сразу использованным — код одноразовый, повторно
-      // применить тот же нельзя, даже если его кто-то перехватил
-      await db.ref('resetConfirmations/' + myTelegramId).update({ used: true });
+      if (!enteredSecret || enteredSecret !== realSecret) {
+        alert('Неверный пароль сброса.');
+        btn.textContent = 'Подтвердить и сбросить всё';
+        btn.disabled = false;
+        return;
+      }
 
       btn.textContent = 'Сбрасываю…';
       const usersSnap = await db.ref('users').once('value');
@@ -1099,8 +1061,7 @@
         `Сброшены очки/статистика/значки у ${userKeys.length} игроков; удалены matches/battles/queue/refereeQueue`);
       resultEl.textContent = `Готово — сброшено ${userKeys.length} игроков, вся история боёв удалена.`;
       resultEl.style.display = 'block';
-      document.getElementById('danger-step-verify').style.display = 'none';
-      document.getElementById('danger-step-request').style.display = 'block';
+      document.getElementById('danger-secret-input').value = '';
       // если сейчас открыта чья-то карточка — обновим показанные в ней
       // очки/статистику, а то они останутся висеть старыми до нового поиска
       if (foundUserKey) {
@@ -1109,7 +1070,9 @@
     } catch (err) {
       console.error(err);
       alert('Не удалось выполнить сброс: ' + (err.message || err));
+    } finally {
       btn.textContent = 'Подтвердить и сбросить всё';
+      btn.disabled = false;
     }
   });
 </script>
