@@ -163,6 +163,7 @@
       <div class="tab active" data-tab="panel">Панель</div>
       <div class="tab" data-tab="event">Ивент</div>
       <div class="tab" data-tab="logs">Журнал</div>
+      <div class="tab" data-tab="clans">Кланы</div>
       <!-- видна всем, у кого вообще есть доступ к панели (moderator/admin/
            superadmin) — а вот воспользоваться получится только у
            superadmin, это проверяется заново при каждом открытии вкладки
@@ -314,6 +315,22 @@
       <div class="admin-empty" id="log-empty" style="display:none;">Записей пока нет</div>
     </div>
 
+    <!-- ===== модерация кланов: создание клана и ссылка на его Telegram-чат
+         публикуются только после ручного одобрения — чтобы через название
+         клана или ссылку на "чат" не протаскивали рекламу. Пока клан на
+         рассмотрении, его создатель не может создать другой клан или
+         вступить в другой (это на стороне основного сайта, см. index.html:
+         users/<uid>/clanId ставится сразу при создании, ещё до одобрения). -->
+    <div class="subview" data-panel="clans" id="panel-clans">
+      <div class="section-label">Кланы на рассмотрении</div>
+      <div id="clans-pending-list"></div>
+      <div class="admin-empty" id="clans-pending-empty" style="display:none;">Нет кланов, ожидающих проверки</div>
+
+      <div class="section-label" style="margin-top:22px;">Ссылки на чат — на проверке</div>
+      <div id="clan-chats-pending-list"></div>
+      <div class="admin-empty" id="clan-chats-pending-empty" style="display:none;">Нет ссылок, ожидающих проверки</div>
+    </div>
+
     <!-- ===== "Правила платформы" — на самом деле опасная зона (полный
          сброс перед бета-тестом), название вкладки нарочно нейтральное.
          Видят её все, у кого вообще есть доступ к панели (moderator/admin/
@@ -450,6 +467,7 @@
       if (tab.dataset.tab === 'logs') openAllLogs();
       if (tab.dataset.tab === 'event') loadEventsAdminList();
       if (tab.dataset.tab === 'danger') openDangerZone();
+      if (tab.dataset.tab === 'clans') loadClansAdminPanel();
     });
   });
 
@@ -676,7 +694,9 @@
     stats_change: 'Изменение статистики', ban_temp: 'Временный бан', ban_forever: 'Бан навсегда', unban: 'Снятие бана',
     badge_given: 'Выдан значок', badge_revoked: 'Снят значок', badge_created: 'Создан новый значок',
     event_published: 'Опубликован ивент', event_removed: 'Ивент снят с главного экрана',
-    full_reset: '⚠️ Полный сброс перед бета-тестом'
+    full_reset: '⚠️ Полный сброс перед бета-тестом',
+    clan_approved: 'Клан одобрен', clan_rejected: 'Клан отклонён',
+    clan_chat_approved: 'Ссылка на чат клана одобрена', clan_chat_rejected: 'Ссылка на чат клана отклонена'
   };
 
   function logAction(actionType, targetKey, targetName, targetPlayerId, details) {
@@ -1075,6 +1095,129 @@
       btn.disabled = false;
     }
   });
+
+  // ===== Кланы: одобрение создания и ссылок на Telegram-чат =====
+  // firstName/название клана приходят как есть, без экранирования — так же,
+  // как и в основном сайте (см. escapeHtml там), вставлять их в innerHTML
+  // напрямую небезопасно.
+  function escapeHtml(str) {
+    return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  const CLAN_POLICY_LABELS_ADMIN = { open: 'Открытый', code: 'По коду', request: 'По заявке' };
+
+  // ссылку в chatLink можно записать в базу и напрямую, мимо приложения
+  // (см. открытые .write-правила проекта) — прежде чем вставлять её в href,
+  // проверяем, что это действительно https://t.me/..., а не javascript:-URI
+  function isSafeTelegramLink(url) {
+    return /^https:\/\/t\.me\/[A-Za-z0-9_+/-]+$/.test(String(url || ''));
+  }
+
+  function loadClansAdminPanel() {
+    db.ref('clans').once('value').then((snap) => {
+      const clans = snap.val() || {};
+      const entries = Object.values(clans);
+      renderClanApprovalQueue(entries.filter((c) => (c.status || 'approved') === 'pending'));
+      renderClanChatApprovalQueue(entries.filter((c) => c.chatLinkStatus === 'pending'));
+    }).catch((err) => {
+      console.error('Кланы: загрузка', err);
+    });
+  }
+
+  function renderClanApprovalQueue(list) {
+    const el = document.getElementById('clans-pending-list');
+    const emptyEl = document.getElementById('clans-pending-empty');
+    emptyEl.style.display = list.length ? 'none' : 'block';
+    el.innerHTML = list.map((c) => `
+      <div class="clan-review-card" data-code="${c.code}" style="background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:12px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+          <div style="font-size:24px; flex-shrink:0;">${escapeHtml(c.emoji || '🛡')}</div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-size:14px; font-weight:700;">${escapeHtml(c.name || 'Клан')}</div>
+            <div style="font-size:11px; color:var(--muted);">${escapeHtml(c.code)} · лидер ${escapeHtml(c.leaderId || '—')} · политика: ${CLAN_POLICY_LABELS_ADMIN[c.joinPolicy] || escapeHtml(c.joinPolicy || '—')}</div>
+          </div>
+        </div>
+        <div style="font-size:11px; color:var(--muted); margin-bottom:10px;">Создан: ${c.createdAt ? new Date(c.createdAt).toLocaleString('ru-RU') : '—'}</div>
+        <textarea class="field-input clan-reject-reason" placeholder="Причина отказа — увидит создатель клана" rows="2" style="margin-bottom:8px;"></textarea>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-gold clan-approve-btn" style="flex:1;">✓ Одобрить</button>
+          <button class="btn btn-live clan-reject-btn" style="flex:1;">✕ Отклонить</button>
+        </div>
+      </div>
+    `).join('');
+    el.querySelectorAll('.clan-review-card').forEach((card) => {
+      const code = card.dataset.code;
+      card.querySelector('.clan-approve-btn').addEventListener('click', () => approveClan(code));
+      card.querySelector('.clan-reject-btn').addEventListener('click', () => {
+        const reason = card.querySelector('.clan-reject-reason').value.trim();
+        if (!reason) { alert('Укажи причину отказа — её увидит создатель клана'); return; }
+        rejectClan(code, reason);
+      });
+    });
+  }
+
+  function renderClanChatApprovalQueue(list) {
+    const el = document.getElementById('clan-chats-pending-list');
+    const emptyEl = document.getElementById('clan-chats-pending-empty');
+    emptyEl.style.display = list.length ? 'none' : 'block';
+    el.innerHTML = list.map((c) => `
+      <div class="clan-chat-review-card" data-code="${c.code}" style="background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:12px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+          <div style="font-size:24px; flex-shrink:0;">${escapeHtml(c.emoji || '🛡')}</div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-size:14px; font-weight:700;">${escapeHtml(c.name || 'Клан')}</div>
+            <div style="font-size:11px; color:var(--muted);">${escapeHtml(c.code)} · лидер ${escapeHtml(c.leaderId || '—')}</div>
+          </div>
+        </div>
+        <div style="font-size:12.5px; margin-bottom:10px; word-break:break-all;">
+          ${isSafeTelegramLink(c.chatLink) ? `<a href="${escapeHtml(c.chatLink)}" target="_blank" rel="noopener" style="color:var(--gold);">${escapeHtml(c.chatLink)}</a>` : `<span style="color:var(--live);">Ссылка не похожа на https://t.me/... — ${escapeHtml(c.chatLink || '')}</span>`}
+        </div>
+        <div class="admin-empty" style="text-align:left; padding:0 0 10px;">Открой ссылку и проверь, что чат публичный и в него можно зайти сразу — если нужна заявка, которую одобряет кто-то другой, проверить, что это за чат, нельзя, и такую ссылку стоит отклонить.</div>
+        <textarea class="field-input clan-chat-reject-reason" placeholder="Причина отказа — увидит лидер клана" rows="2" style="margin-bottom:8px;"></textarea>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-gold clan-chat-approve-btn" style="flex:1;">✓ Одобрить</button>
+          <button class="btn btn-live clan-chat-reject-btn" style="flex:1;">✕ Отклонить</button>
+        </div>
+      </div>
+    `).join('');
+    el.querySelectorAll('.clan-chat-review-card').forEach((card) => {
+      const code = card.dataset.code;
+      card.querySelector('.clan-chat-approve-btn').addEventListener('click', () => approveClanChat(code));
+      card.querySelector('.clan-chat-reject-btn').addEventListener('click', () => {
+        const reason = card.querySelector('.clan-chat-reject-reason').value.trim();
+        if (!reason) { alert('Укажи причину отказа — её увидит лидер клана'); return; }
+        rejectClanChat(code, reason);
+      });
+    });
+  }
+
+  function approveClan(code) {
+    db.ref('clans/' + code).update({ status: 'approved', rejectionReason: null }).then(() => {
+      logAction('clan_approved', code, code, code, '');
+      loadClansAdminPanel();
+    }).catch((err) => alert('Не удалось одобрить клан: ' + (err.message || err)));
+  }
+
+  function rejectClan(code, reason) {
+    db.ref('clans/' + code).update({ status: 'rejected', rejectionReason: reason }).then(() => {
+      logAction('clan_rejected', code, code, code, 'Причина: ' + reason);
+      loadClansAdminPanel();
+    }).catch((err) => alert('Не удалось отклонить клан: ' + (err.message || err)));
+  }
+
+  function approveClanChat(code) {
+    db.ref('clans/' + code).update({ chatLinkStatus: 'approved', chatLinkRejectionReason: null }).then(() => {
+      logAction('clan_chat_approved', code, code, code, '');
+      loadClansAdminPanel();
+    }).catch((err) => alert('Не удалось одобрить ссылку: ' + (err.message || err)));
+  }
+
+  function rejectClanChat(code, reason) {
+    db.ref('clans/' + code).update({ chatLinkStatus: 'rejected', chatLinkRejectionReason: reason }).then(() => {
+      logAction('clan_chat_rejected', code, code, code, 'Причина: ' + reason);
+      loadClansAdminPanel();
+    }).catch((err) => alert('Не удалось отклонить ссылку: ' + (err.message || err)));
+  }
 </script>
 </body>
 </html>
