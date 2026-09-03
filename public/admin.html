@@ -416,6 +416,18 @@
           </div>
           <div class="admin-empty" id="danger-badge-grant-result" style="display:none; margin-top:8px; text-align:left;"></div>
         </div>
+
+        <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--line);">
+          <label class="field-label">Гостевые аккаунты</label>
+          <button class="btn btn-line" id="btn-danger-delete-guests" style="width:100%;">Удалить всех гостей</button>
+          <div class="admin-empty" style="text-align:left; padding:8px 0 0;">
+            Гости (аккаунты вида guest_...) создаются автоматически, когда
+            приложение открывают не из Telegram, и обычно сами чистятся
+            через 24 часа после создания. Эта кнопка удаляет их все прямо
+            сейчас, не дожидаясь суток.
+          </div>
+          <div class="admin-empty" id="danger-delete-guests-result" style="display:none; margin-top:8px; text-align:left;"></div>
+        </div>
       </div>
 
     </div>
@@ -782,6 +794,7 @@
     full_reset: '⚠️ Полный сброс перед бета-тестом',
     reset_secret_changed: 'Пароль сброса задан/изменён',
     badge_mass_given: 'Значок выдан всем игрокам',
+    guests_deleted: 'Удалены все гостевые аккаунты',
     clan_approved: 'Клан одобрен', clan_rejected: 'Клан отклонён',
     clan_chat_approved: 'Ссылка на чат клана одобрена', clan_chat_rejected: 'Ссылка на чат клана отклонена',
     role_changed: 'Изменена роль'
@@ -1124,6 +1137,7 @@
     document.getElementById('btn-danger-reset').textContent = 'Подтвердить и сбросить всё';
     document.getElementById('danger-reset-result').style.display = 'none';
     document.getElementById('danger-badge-grant-result').style.display = 'none';
+    document.getElementById('danger-delete-guests-result').style.display = 'none';
     // ждём каталог значков — та же гонка, что и в renderUserBadgesSection:
     // если открыть вкладку быстрее, чем отработает loadBadgeDefs() при входе,
     // список будет пуст
@@ -1254,6 +1268,39 @@
     } catch (err) {
       console.error(err);
       alert('Не удалось выдать значок: ' + (err.message || err));
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('btn-danger-delete-guests').addEventListener('click', async () => {
+    if (dangerZoneVerifiedRole !== 'superadmin') return; // на случай подделки клика мимо проверки выше
+    const btn = document.getElementById('btn-danger-delete-guests');
+    const resultEl = document.getElementById('danger-delete-guests-result');
+    btn.disabled = true;
+    try {
+      const usersSnap = await db.ref('users').once('value');
+      const users = usersSnap.val() || {};
+      const guestKeys = Object.keys(users).filter((key) => key.startsWith('guest_'));
+      if (!guestKeys.length) {
+        resultEl.textContent = 'Гостевых аккаунтов сейчас нет.';
+        resultEl.style.display = 'block';
+        return;
+      }
+      if (!confirm(`Удалить ${guestKeys.length} гостевых аккаунтов?`)) return;
+      const update = {};
+      guestKeys.forEach((key) => {
+        update['users/' + key] = null;
+        update['presence/' + key] = null;
+      });
+      await db.ref().update(update);
+      logAction('guests_deleted', '—', 'Гостевые аккаунты', '—', `Удалено ${guestKeys.length} гостевых аккаунтов`);
+      resultEl.textContent = `Готово — удалено ${guestKeys.length} гостевых аккаунтов.`;
+      resultEl.style.display = 'block';
+      loadUserList(userListWrap.style.display !== 'none');
+    } catch (err) {
+      console.error(err);
+      alert('Не удалось удалить гостей: ' + (err.message || err));
     } finally {
       btn.disabled = false;
     }
