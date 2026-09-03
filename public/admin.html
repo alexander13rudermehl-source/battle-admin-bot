@@ -201,6 +201,7 @@
         <div class="r-toggle-row">
           <div class="r-toggle-label">Уровень доступа</div>
           <div id="role-info"></div>
+          <div id="role-manage-block" style="display:none; flex-wrap:wrap; gap:8px; margin-top:8px;"></div>
         </div>
 
         <div class="r-toggle-row">
@@ -557,6 +558,40 @@
   function canEditStats() { return myRole === 'admin' || myRole === 'superadmin'; }
   function canManageBadges() { return myRole === 'admin' || myRole === 'superadmin'; }
   function canManageEvent() { return myRole === 'admin' || myRole === 'superadmin'; }
+  // выдача ролей — самое чувствительное действие в панели (может выдать
+  // superadmin кому угодно, включая себя), поэтому только Супердоступ, а не
+  // весь Admin+. См. также database.rules.json — поле role там теперь
+  // разрешено менять с любого прямого запроса к базе, не только из панели
+  // (реальной авторизации в проекте нет, ограничить это правилами нельзя).
+  function canManageRoles() { return myRole === 'superadmin'; }
+
+  function renderRoleManageBlock(userKey, currentRole) {
+    const block = document.getElementById('role-manage-block');
+    if (!canManageRoles()) { block.style.display = 'none'; block.innerHTML = ''; return; }
+    block.style.display = 'flex';
+    block.innerHTML = ['user', 'moderator', 'admin', 'superadmin'].map((r) =>
+      `<div class="badge-pill pick${r === currentRole ? ' on' : ''}" data-role="${r}">${ROLE_LABELS[r]}</div>`
+    ).join('');
+    block.querySelectorAll('[data-role]').forEach((chip) => {
+      chip.addEventListener('click', () => changeUserRole(userKey, chip.dataset.role, currentRole));
+    });
+  }
+
+  function changeUserRole(userKey, newRole, oldRole) {
+    if (!canManageRoles() || newRole === oldRole) return;
+    const label = ROLE_LABELS[newRole] || newRole;
+    const warning = (userKey === myTelegramId && newRole !== 'superadmin')
+      ? `Ты меняешь роль СЕБЕ на "${label}" — после этого можешь потерять доступ к панели. Продолжить?`
+      : `Сменить роль игрока на "${label}"?`;
+    if (!confirm(warning)) return;
+    db.ref('users/' + userKey + '/role').set(newRole).then(() => {
+      const targetName = document.getElementById('r-name').textContent;
+      const targetPlayerId = document.getElementById('r-id').textContent;
+      logAction('role_changed', userKey, targetName, targetPlayerId, `${ROLE_LABELS[oldRole] || oldRole} → ${label}`);
+      return db.ref('users/' + userKey).once('value');
+    }).then((snap) => { if (snap.exists()) openUserDetail(userKey, snap.val()); })
+      .catch((err) => { console.error(err); alert('Не удалось изменить роль: ' + (err.message || err)); });
+  }
 
   // Модератор занимается повседневной модерацией (баны/ограничения,
   // одобрение кланов и ссылок на чаты) — каталог значков и ивент-баннер на
@@ -658,10 +693,9 @@
     if (user.avatarData) { rAvatar.style.backgroundImage = `url('${user.avatarData}')`; rAvatar.textContent = ''; }
     else { rAvatar.style.backgroundImage = ''; rAvatar.textContent = (user.firstName || '??').slice(0, 2).toUpperCase(); }
 
-    // Роли выдаются только вручную через Firebase Console — так же, как на
-    // основном сайте (см. database.rules.json). Здесь — только просмотр.
     document.getElementById('role-info').innerHTML =
-      `<div class="admin-empty" style="padding:4px 0 0;">Текущий уровень: <strong>${ROLE_LABELS[role] || role}</strong>. Роли меняются только вручную через Firebase Console.</div>`;
+      `<div class="admin-empty" style="padding:4px 0 0;">Текущий уровень: <strong>${ROLE_LABELS[role] || role}</strong>${canManageRoles() ? '' : '. Менять роли может только Супердоступ.'}</div>`;
+    renderRoleManageBlock(userKey, role);
 
     renderStatusBadge(user);
     // ждём, пока каталог значков (badgeDefsCache) хотя бы раз загрузится —
@@ -718,7 +752,8 @@
     event_published: 'Опубликован ивент', event_removed: 'Ивент снят с главного экрана',
     full_reset: '⚠️ Полный сброс перед бета-тестом',
     clan_approved: 'Клан одобрен', clan_rejected: 'Клан отклонён',
-    clan_chat_approved: 'Ссылка на чат клана одобрена', clan_chat_rejected: 'Ссылка на чат клана отклонена'
+    clan_chat_approved: 'Ссылка на чат клана одобрена', clan_chat_rejected: 'Ссылка на чат клана отклонена',
+    role_changed: 'Изменена роль'
   };
 
   function logAction(actionType, targetKey, targetName, targetPlayerId, details) {
