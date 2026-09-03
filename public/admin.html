@@ -169,6 +169,17 @@
     </div>
   </div>
 
+  <!-- аварийный режим (config/emergencyLockdown) — отдельный от "доступ
+       запрещён" экран: тут дело не в роли конкретного человека, закрыта
+       вся панель целиком, включая admin/moderator, кроме superadmin (см.
+       проверку рядом с определением роли в JS ниже) -->
+  <div class="screen" id="screen-emergency">
+    <div class="center-msg denied">
+      <div class="big">🚨 АВАРИЙНЫЙ РЕЖИМ</div>
+      <div class="small">Панель временно закрыта для всех, кроме Супердоступа — что-то пошло не так, и с этим уже разбираются. Доступ вернётся, как только аварийный режим снимут.</div>
+    </div>
+  </div>
+
   <div class="screen" id="screen-app">
 
     <div class="tabs">
@@ -466,6 +477,38 @@
           </div>
           <div class="admin-empty" id="danger-delete-guests-result" style="display:none; margin-top:8px; text-align:left;"></div>
         </div>
+
+        <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--line);">
+          <label class="field-label">Режим обслуживания (для обновлений/тестов)</label>
+          <div class="admin-empty" style="text-align:left; padding:0 0 10px;">
+            Закрывает основной сайт для обычных игроков — они увидят
+            экран «Идут технические работы». Модератор/Админ/Супердоступ
+            заходят как обычно, чтобы проверить обновление до того, как
+            открыть его всем.
+          </div>
+          <div class="toggle-row" id="toggle-maintenance">
+            <div class="toggle-check"></div>
+            <div class="toggle-label">Включён</div>
+          </div>
+          <label class="field-label" style="margin-top:12px;">Сообщение для игроков (необязательно)</label>
+          <textarea class="field-input" id="maintenance-message-input" placeholder="Скоро вернёмся — попробуй зайти чуть позже." rows="2"></textarea>
+          <button class="btn btn-line" id="btn-save-maintenance-message" style="width:100%; margin-top:8px;">Сохранить сообщение</button>
+        </div>
+
+        <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--live);">
+          <label class="field-label" style="color:var(--live);">Аварийный режим</label>
+          <div class="admin-empty" style="text-align:left; padding:0 0 10px; color:var(--live);">
+            Полностью закрывает и основной сайт, и эту панель — для ВСЕХ,
+            включая Админов и Модераторов. Доступ сохранится только у
+            Супердоступа. Включай только при реальном инциденте (взлом,
+            утечка данных, критический баг) — не для обычных обновлений,
+            для них есть режим обслуживания выше.
+          </div>
+          <div class="toggle-row" id="toggle-emergency">
+            <div class="toggle-check"></div>
+            <div class="toggle-label">Включён</div>
+          </div>
+        </div>
       </div>
 
     </div>
@@ -554,14 +597,26 @@
         return;
       }
 
-      document.getElementById('me-box').style.display = 'block';
-      document.getElementById('me-name').textContent = user.firstName || 'Игрок';
-      document.getElementById('me-role').textContent = ROLE_LABELS[role] || role;
+      // аварийный режим — закрывает панель для всех, включая admin/
+      // moderator, кроме superadmin (см. config/emergencyLockdown, тумблер
+      // в "Правилах платформы"). Проверяем отдельным запросом, а не
+      // держим это поле в правилах доступа — так снятие режима действует
+      // сразу при следующем открытии панели, без переиздания правил.
+      db.ref('config/emergencyLockdown').once('value').then((lockdownSnap) => {
+        if (lockdownSnap.val() && role !== 'superadmin') {
+          showScreen('screen-emergency');
+          return;
+        }
 
-      applyRoleUI();
-      showScreen('screen-app');
-      loadUserList(false);
-      loadBadgeDefs();
+        document.getElementById('me-box').style.display = 'block';
+        document.getElementById('me-name').textContent = user.firstName || 'Игрок';
+        document.getElementById('me-role').textContent = ROLE_LABELS[role] || role;
+
+        applyRoleUI();
+        showScreen('screen-app');
+        loadUserList(false);
+        loadBadgeDefs();
+      });
     }).catch((err) => {
       console.error(err);
       document.getElementById('denied-text').textContent = 'Не удалось проверить доступ: ' + (err.message || err);
@@ -945,7 +1000,10 @@
     clan_approved: 'Клан одобрен', clan_rejected: 'Клан отклонён',
     clan_chat_approved: 'Ссылка на чат клана одобрена', clan_chat_rejected: 'Ссылка на чат клана отклонена',
     role_changed: 'Изменена роль',
-    admin_permission_changed: 'Изменено право администратора'
+    admin_permission_changed: 'Изменено право администратора',
+    maintenance_toggled: 'Режим обслуживания переключён',
+    maintenance_message_changed: 'Сообщение режима обслуживания изменено',
+    emergency_lockdown_toggled: 'Аварийный режим переключён'
   };
 
   function logAction(actionType, targetKey, targetName, targetPlayerId, details) {
@@ -1295,6 +1353,19 @@
         `<option value="${id}">${escapeHtml(def.emoji || '🏅')} ${escapeHtml(def.label || id)}</option>`
       ).join('');
     });
+    loadPlatformModeState();
+  }
+
+  function loadPlatformModeState() {
+    Promise.all([
+      db.ref('config/maintenanceMode').once('value'),
+      db.ref('config/maintenanceMessage').once('value'),
+      db.ref('config/emergencyLockdown').once('value')
+    ]).then(([modeSnap, msgSnap, lockdownSnap]) => {
+      document.getElementById('toggle-maintenance').classList.toggle('on', !!modeSnap.val());
+      document.getElementById('maintenance-message-input').value = msgSnap.val() || '';
+      document.getElementById('toggle-emergency').classList.toggle('on', !!lockdownSnap.val());
+    }).catch((err) => console.error('Режимы платформы: загрузка', err));
   }
 
   document.getElementById('btn-danger-secret-save').addEventListener('click', async () => {
@@ -1454,6 +1525,45 @@
     } finally {
       btn.disabled = false;
     }
+  });
+
+  // ===== Режим обслуживания / аварийный режим =====
+  // Оба — просто два булевых поля в config/ (плюс необязательный текст
+  // сообщения для обслуживания). Проверка на стороне index.html и здесь,
+  // при входе в панель, — см. resolveIdentity() в index.html и блок
+  // проверки роли выше. Тумблеры — тот же .toggle-row, что и в "Правах
+  // админов".
+  document.getElementById('toggle-maintenance').addEventListener('click', () => {
+    if (dangerZoneVerifiedRole !== 'superadmin') return; // на случай подделки клика мимо проверки выше
+    const toggle = document.getElementById('toggle-maintenance');
+    const newVal = !toggle.classList.contains('on');
+    if (newVal && !confirm('Включить режим обслуживания? Обычные игроки не смогут пользоваться сайтом, пока его не выключишь.')) return;
+    db.ref('config/maintenanceMode').set(newVal).then(() => {
+      toggle.classList.toggle('on', newVal);
+      logAction('maintenance_toggled', '—', '—', '—', newVal ? 'Включён' : 'Выключен');
+    }).catch((err) => { console.error(err); alert('Не удалось изменить режим обслуживания: ' + (err.message || err)); });
+  });
+
+  document.getElementById('btn-save-maintenance-message').addEventListener('click', () => {
+    if (dangerZoneVerifiedRole !== 'superadmin') return; // на случай подделки клика мимо проверки выше
+    const val = document.getElementById('maintenance-message-input').value.trim();
+    db.ref('config/maintenanceMessage').set(val || null).then(() => {
+      logAction('maintenance_message_changed', '—', '—', '—', val || '(очищено)');
+    }).catch((err) => { console.error(err); alert('Не удалось сохранить сообщение: ' + (err.message || err)); });
+  });
+
+  document.getElementById('toggle-emergency').addEventListener('click', () => {
+    if (dangerZoneVerifiedRole !== 'superadmin') return; // на случай подделки клика мимо проверки выше
+    const toggle = document.getElementById('toggle-emergency');
+    const newVal = !toggle.classList.contains('on');
+    const warning = newVal
+      ? 'Включить АВАРИЙНЫЙ РЕЖИМ? Это закроет сайт и эту панель для ВСЕХ, включая Админов и Модераторов. Продолжить?'
+      : 'Выключить аварийный режим и вернуть доступ всем?';
+    if (!confirm(warning)) return;
+    db.ref('config/emergencyLockdown').set(newVal).then(() => {
+      toggle.classList.toggle('on', newVal);
+      logAction('emergency_lockdown_toggled', '—', '—', '—', newVal ? 'Включён' : 'Выключен');
+    }).catch((err) => { console.error(err); alert('Не удалось изменить аварийный режим: ' + (err.message || err)); });
   });
 
   // ===== Кланы: одобрение создания и ссылок на Telegram-чат =====
