@@ -206,12 +206,15 @@
         <div class="r-toggle-row">
           <div class="r-toggle-label">Значки-награды</div>
           <div id="user-badges-list" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
-          <div id="badge-catalog" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
-          <div style="display:flex; gap:8px;">
-            <input type="text" id="new-badge-emoji" placeholder="🧪" maxlength="4" style="width:56px; text-align:center; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:9px; color:var(--text); font-size:16px;">
-            <input type="text" id="new-badge-label" placeholder="Название значка" style="flex:1; min-width:0; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:9px 12px; color:var(--text); font-family:'Inter',sans-serif; font-size:13px;">
+          <div id="badge-manage-block" style="display:none; flex-direction:column; gap:8px;">
+            <div id="badge-catalog" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+            <div style="display:flex; gap:8px;">
+              <input type="text" id="new-badge-emoji" placeholder="🧪" maxlength="4" style="width:56px; text-align:center; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:9px; color:var(--text); font-size:16px;">
+              <input type="text" id="new-badge-label" placeholder="Название значка" style="flex:1; min-width:0; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:9px 12px; color:var(--text); font-family:'Inter',sans-serif; font-size:13px;">
+            </div>
+            <button class="btn btn-line" id="btn-create-badge">+ Создать значок</button>
           </div>
-          <button class="btn btn-line" id="btn-create-badge">+ Создать значок</button>
+          <div id="badge-manage-locked-note" class="admin-empty" style="display:none;padding:2px 0;">Создавать и выдавать/снимать значки могут только Админ и Супердоступ</div>
         </div>
 
         <div class="r-toggle-row">
@@ -447,6 +450,7 @@
       document.getElementById('me-name').textContent = user.firstName || 'Игрок';
       document.getElementById('me-role').textContent = ROLE_LABELS[role] || role;
 
+      applyRoleUI();
       showScreen('screen-app');
       loadUserList(false);
       loadBadgeDefs();
@@ -551,6 +555,18 @@
   }
 
   function canEditStats() { return myRole === 'admin' || myRole === 'superadmin'; }
+  function canManageBadges() { return myRole === 'admin' || myRole === 'superadmin'; }
+  function canManageEvent() { return myRole === 'admin' || myRole === 'superadmin'; }
+
+  // Модератор занимается повседневной модерацией (баны/ограничения,
+  // одобрение кланов и ссылок на чаты) — каталог значков и ивент-баннер на
+  // главном экране ближе к настройке самой игры, поэтому только для
+  // Админа/Супердоступа. Вкладку "Ивент" для модератора просто прячем
+  // целиком, а не показываем заблокированной — она не пригодится ему вообще.
+  function applyRoleUI() {
+    const eventTab = document.querySelector('.tab[data-tab="event"]');
+    if (eventTab) eventTab.style.display = canManageEvent() ? '' : 'none';
+  }
 
   // ===== значки-награды =====
   // Каталог значков (эмодзи + название) хранится в badgeDefs/<badgeId>,
@@ -575,11 +591,12 @@
     const awardedEl = document.getElementById('user-badges-list');
     const catalogEl = document.getElementById('badge-catalog');
     const awardedIds = Object.keys(userBadges || {});
+    const manageable = canManageBadges();
 
     awardedEl.innerHTML = awardedIds.length ? awardedIds.map(id => {
       const def = badgeDefsCache[id];
       if (!def) return '';
-      return `<div class="badge-pill awarded" data-remove-badge="${id}"><span class="emoji">${def.emoji || '🏅'}</span>${def.label || ''}<span class="remove">×</span></div>`;
+      return `<div class="badge-pill awarded"${manageable ? ` data-remove-badge="${id}"` : ''}><span class="emoji">${def.emoji || '🏅'}</span>${def.label || ''}${manageable ? '<span class="remove">×</span>' : ''}</div>`;
     }).join('') : '<div class="admin-empty" style="padding:2px 0;">Пока не выдано ни одного значка</div>';
 
     catalogEl.innerHTML = Object.entries(badgeDefsCache).map(([id, def]) => {
@@ -596,6 +613,7 @@
   }
 
   function toggleBadge(userKey, badgeId, isAwarded) {
+    if (!canManageBadges()) return; // защита от прямого вызова мимо скрытого UI
     const def = badgeDefsCache[badgeId];
     const targetName = document.getElementById('r-name').textContent;
     const targetPlayerId = document.getElementById('r-id').textContent;
@@ -609,7 +627,7 @@
   }
 
   document.getElementById('btn-create-badge').addEventListener('click', () => {
-    if (!foundUserKey) return;
+    if (!foundUserKey || !canManageBadges()) return;
     const emojiInput = document.getElementById('new-badge-emoji');
     const labelInput = document.getElementById('new-badge-label');
     const emoji = emojiInput.value.trim() || '🏅';
@@ -650,6 +668,10 @@
     // иначе если карточку открыли быстрее, чем отработал loadBadgeDefs() при
     // входе, уже выданные значки этого игрока пропадут из вида
     (badgeDefsReadyPromise || Promise.resolve()).then(() => renderUserBadgesSection(userKey, user.badges || {}));
+
+    const badgesEditable = canManageBadges();
+    document.getElementById('badge-manage-block').style.display = badgesEditable ? 'flex' : 'none';
+    document.getElementById('badge-manage-locked-note').style.display = badgesEditable ? 'none' : 'block';
 
     const editable = canEditStats();
     const stats = user.stats || {};
@@ -948,6 +970,7 @@
   });
 
   document.getElementById('btn-event-publish').addEventListener('click', () => {
+    if (!canManageEvent()) return; // защита от прямого вызова мимо скрытой вкладки
     const title = document.getElementById('event-title-input').value.trim();
     if (!title) { document.getElementById('event-title-input').focus(); return; }
     const description = document.getElementById('event-desc-input').value.trim();
@@ -964,6 +987,7 @@
   });
 
   document.getElementById('btn-event-remove').addEventListener('click', () => {
+    if (!canManageEvent()) return; // защита от прямого вызова мимо скрытой вкладки
     if (!currentEventId) { alert('Сначала выбери сохранённый ивент в списке — этот ещё не сохранён'); return; }
     const title = document.getElementById('event-title-input').value.trim() || '—';
     db.ref('events/' + currentEventId).remove().then(() => {
