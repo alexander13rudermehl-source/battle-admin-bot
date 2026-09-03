@@ -347,14 +347,16 @@
          входе в панель — так если роль сменили, пока вкладка админ-панели
          просто лежала открытой, старый доступ не сохранится.
 
-         Дальше — второй барьер: секретный пароль сброса. В отличие от
-         первой версии (где фраза-подтверждение была захардкожена прямо в
-         этом JS — любой, кто открыл бы исходник страницы, увидел бы её),
-         пароль хранится в самой базе (config/resetSecret) и задаётся
-         ТОЛЬКО вручную через Firebase Console — той же рукой и тем же
-         способом, каким тут выдаются роли admin/superadmin (см. README).
-         В коде страницы этого пароля нет вообще, только сравнение с тем,
-         что реально лежит в базе на момент проверки. -->
+         Дальше — второй барьер: секретный пароль сброса, хранится в самой
+         базе (config/resetSecret). Задать/сменить его можно прямо здесь,
+         в панели (форма "Задать новый пароль" ниже) — по запросу вернули
+         это в UI, вместо единственного варианта через Firebase Console
+         (тот способ тоже по-прежнему работает, см. README). Пароль
+         одноразовый: после каждого УСПЕШНОГО сброса он автоматически
+         стирается из базы вместе с остальными данными — старым или
+         подсмотренным паролем нельзя запустить сброс ещё раз, пока
+         кто-то заново не впишет новый. -->
+
     <div class="subview" data-panel="danger" id="panel-danger">
 
       <div class="center-msg" id="danger-checking" style="min-height:30vh;">
@@ -381,12 +383,19 @@
           бета-теста, когда вся текущая история — просто тестовый мусор.
         </div>
 
-        <label class="field-label">Секретный пароль сброса (задан вручную в Firebase Console → config/resetSecret)</label>
+        <label class="field-label">Задать новый пароль сброса (одноразовый — сработает один раз и сотрётся сам)</label>
+        <div style="display:flex; gap:8px; margin-bottom:6px;">
+          <input type="text" class="field-input" id="danger-secret-set-input" placeholder="Новый пароль" autocomplete="off" style="flex:1;">
+          <button class="btn btn-line" id="btn-danger-secret-save" style="width:auto; padding:0 16px; flex-shrink:0;">Сохранить</button>
+        </div>
+        <div class="admin-empty" id="danger-secret-save-result" style="display:none; margin-bottom:14px; text-align:left;"></div>
+
+        <label class="field-label">Пароль сброса</label>
         <input type="password" class="field-input" id="danger-secret-input" placeholder="Пароль сброса" autocomplete="off" style="margin-bottom:10px;">
         <button class="btn btn-live" id="btn-danger-reset" style="width:100%;">Подтвердить и сбросить всё</button>
         <div class="admin-empty" id="danger-secret-missing" style="display:none; margin-top:10px; text-align:left; color:var(--live);">
-          config/resetSecret ещё не задан в базе — сброс невозможен, пока
-          кто-то не впишет его вручную через Firebase Console (см. README).
+          config/resetSecret ещё не задан — сначала впиши пароль в поле выше
+          ("Задать новый пароль сброса") и сохрани его.
         </div>
 
         <div class="admin-empty" id="danger-reset-result" style="display:none; margin-top:14px;"></div>
@@ -754,6 +763,7 @@
     badge_given: 'Выдан значок', badge_revoked: 'Снят значок', badge_created: 'Создан новый значок',
     event_published: 'Опубликован ивент', event_removed: 'Ивент снят с главного экрана',
     full_reset: '⚠️ Полный сброс перед бета-тестом',
+    reset_secret_changed: 'Пароль сброса задан/изменён',
     clan_approved: 'Клан одобрен', clan_rejected: 'Клан отклонён',
     clan_chat_approved: 'Ссылка на чат клана одобрена', clan_chat_rejected: 'Ссылка на чат клана отклонена',
     role_changed: 'Изменена роль'
@@ -1089,11 +1099,36 @@
 
   function resetDangerZoneForm() {
     document.getElementById('danger-secret-input').value = '';
+    document.getElementById('danger-secret-set-input').value = '';
+    document.getElementById('danger-secret-save-result').style.display = 'none';
     document.getElementById('danger-secret-missing').style.display = 'none';
     document.getElementById('btn-danger-reset').disabled = false;
     document.getElementById('btn-danger-reset').textContent = 'Подтвердить и сбросить всё';
     document.getElementById('danger-reset-result').style.display = 'none';
   }
+
+  document.getElementById('btn-danger-secret-save').addEventListener('click', async () => {
+    if (dangerZoneVerifiedRole !== 'superadmin') return; // на случай подделки клика мимо проверки выше
+    const input = document.getElementById('danger-secret-set-input');
+    const value = input.value.trim();
+    if (!value) { input.focus(); return; }
+    const btn = document.getElementById('btn-danger-secret-save');
+    const resultEl = document.getElementById('danger-secret-save-result');
+    btn.disabled = true;
+    try {
+      await db.ref('config/resetSecret').set(value);
+      logAction('reset_secret_changed', '—', '—', '—', 'Пароль сброса задан/изменён через панель');
+      input.value = '';
+      resultEl.textContent = 'Пароль сохранён — сработает один раз, дальше вводи его в поле «Пароль сброса» ниже.';
+      resultEl.style.display = 'block';
+      document.getElementById('danger-secret-missing').style.display = 'none';
+    } catch (err) {
+      console.error(err);
+      alert('Не удалось сохранить пароль: ' + (err.message || err));
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   document.getElementById('btn-danger-reset').addEventListener('click', async () => {
     if (dangerZoneVerifiedRole !== 'superadmin') return; // на случай подделки клика мимо проверки выше
@@ -1128,7 +1163,11 @@
         matches: null,
         battles: null,
         queue: null,
-        refereeQueue: null
+        refereeQueue: null,
+        // одноразовость пароля: успешный сброс сам стирает config/resetSecret,
+        // чтобы этим же паролем (если он где-то сохранился/подсмотрен) нельзя
+        // было запустить сброс ещё раз — для следующего нужно задать новый
+        'config/resetSecret': null
       };
       userKeys.forEach((key) => {
         update['users/' + key + '/points'] = 0;
@@ -1141,7 +1180,7 @@
       await db.ref().update(update);
       logAction('full_reset', '—', 'Все игроки', '—',
         `Сброшены очки/статистика/значки у ${userKeys.length} игроков; удалены matches/battles/queue/refereeQueue`);
-      resultEl.textContent = `Готово — сброшено ${userKeys.length} игроков, вся история боёв удалена.`;
+      resultEl.textContent = `Готово — сброшено ${userKeys.length} игроков, вся история боёв удалена. Пароль сброса одноразовый — уже стёрт, для следующего раза задай новый.`;
       resultEl.style.display = 'block';
       document.getElementById('danger-secret-input').value = '';
       // если сейчас открыта чья-то карточка — обновим показанные в ней
