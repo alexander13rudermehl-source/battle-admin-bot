@@ -1212,7 +1212,9 @@
         'config/resetSecret': null
       };
       userKeys.forEach((key) => {
-        update['users/' + key + '/points'] = 0;
+        // 1000 — стартовый ELO (index.html: ELO_BASELINE), не 0 — иначе
+        // сброшенные аккаунты стартуют ниже, чем только что созданные
+        update['users/' + key + '/points'] = 1000;
         update['users/' + key + '/monthlyPoints'] = 0;
         update['users/' + key + '/monthlyPeriod'] = null;
         update['users/' + key + '/starsBalance'] = 0;
