@@ -132,6 +132,15 @@
   .event-admin-row .ea-sub{ font-size:11.5px; color:var(--muted); margin-top:2px; }
   .event-admin-row .ea-dot{ width:8px; height:8px; border-radius:50%; background:var(--muted); flex-shrink:0; }
   .event-admin-row.live .ea-dot{ background:#3ED598; }
+
+  /* "Права админов" — по образцу Telegram: список отдельных переключаемых
+     возможностей у конкретного админа, не общий тир */
+  .toggle-row{ display:flex; align-items:center; gap:12px; padding:14px 0; border-bottom:1px solid var(--line); cursor:pointer; }
+  .toggle-row:last-child{ border-bottom:none; }
+  .toggle-check{ width:22px; height:22px; border-radius:50%; border:1.5px solid var(--line); flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:12px; color:transparent; }
+  .toggle-row.on .toggle-check{ background:var(--gold); border-color:var(--gold); color:#fff; }
+  .toggle-row.on .toggle-check::after{ content:'✓'; }
+  .toggle-label{ font-size:14px; }
 </style>
 </head>
 <body>
@@ -205,6 +214,7 @@
           <div class="r-toggle-label">Уровень доступа</div>
           <div id="role-info"></div>
           <div id="role-manage-block" style="display:none; flex-wrap:wrap; gap:8px; margin-top:8px;"></div>
+          <button class="btn btn-line" id="btn-open-admin-rights" style="display:none; width:100%; margin-top:10px;">⚙️ Настроить права администратора</button>
         </div>
 
         <div class="r-toggle-row">
@@ -241,7 +251,7 @@
 
         <div class="r-toggle-row">
           <div class="r-toggle-label">Бан и ограничения</div>
-          <div style="display:flex; flex-direction:column; gap:8px;">
+          <div id="ban-manage-block" style="display:none; flex-direction:column; gap:8px;">
             <div style="display:flex; gap:8px;">
               <button class="btn btn-line ban-duration-btn" data-hours="1" style="flex:1;">1 час</button>
               <button class="btn btn-line ban-duration-btn" data-hours="24" style="flex:1;">24 часа</button>
@@ -250,11 +260,36 @@
             <button class="btn btn-live" id="btn-ban-forever">Забанить навсегда</button>
             <button class="btn btn-line" id="btn-unban">Снять бан / ограничение</button>
           </div>
+          <div id="ban-manage-locked-note" class="admin-empty" style="display:none;padding:2px 0;">Банить и снимать ограничения может только тот, у кого включено это право</div>
         </div>
 
         <button class="btn btn-line" id="btn-open-player-history" style="width:100%; margin-top:14px;">📜 История этого игрока</button>
       </div>
 
+    </div>
+
+    <!-- ===== права конкретного админа — по образцу "Прав админов" в
+         Telegram: не фиксированные тиры (moderator/admin), а отдельные
+         переключаемые возможности у каждого админа. Открывается кнопкой
+         "Настроить права" из карточки игрока (только если у него role
+         "admin" и смотрит superadmin — см. openAdminRights). Супердоступ
+         в этот список не попадает — у него все права всегда, без
+         исключений и без возможности их у него забрать через этот экран. -->
+    <div class="subview" data-panel="admin-rights" id="panel-admin-rights">
+      <div class="back-link" id="admin-rights-back">← Права админов</div>
+      <div style="display:flex; align-items:center; gap:12px; margin:14px 0 20px;">
+        <div class="r-avatar" id="rights-avatar" style="margin-bottom:0; width:48px; height:48px; flex-shrink:0;"></div>
+        <div style="min-width:0;">
+          <div style="font-size:15px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" id="rights-name">—</div>
+          <div style="font-size:12px; color:var(--muted);" id="rights-id">—</div>
+        </div>
+      </div>
+      <div class="section-label">Возможности администратора</div>
+      <div id="admin-rights-toggles"></div>
+      <div class="admin-empty" style="text-align:left; padding:14px 0 0;">
+        Полный сброс и выдача ролей/прав — не сюда, это всегда только у
+        Супердоступа и по отдельности не настраивается.
+      </div>
     </div>
 
     <!-- ===== ивент-баннер на главном экране ===== -->
@@ -327,7 +362,10 @@
          клана или ссылку на "чат" не протаскивали рекламу. Пока клан на
          рассмотрении, его создатель не может создать другой клан или
          вступить в другой (это на стороне основного сайта, см. index.html:
-         users/<uid>/clanId ставится сразу при создании, ещё до одобрения). -->
+         users/<uid>/clanId ставится сразу при создании, ещё до одобрения).
+         Вкладка видна только тем, у кого включено право "clans" (см.
+         applyRoleUI/canManageClans) — у superadmin всегда, у admin —
+         только если явно выдано через "Настроить права". -->
     <div class="subview" data-panel="clans" id="panel-clans">
       <div class="section-label">Кланы на рассмотрении</div>
       <div id="clans-pending-list"></div>
@@ -459,11 +497,38 @@
   tg?.ready();
   tg?.expand();
 
+  // 'moderator' — легаси-значение role, оставшееся с тех пор, когда права
+  // были фиксированными тирами. Новых moderator больше не назначить (см.
+  // renderRoleManageBlock), но у кого он уже стоит — пускаем и трактуем
+  // как admin с правами bans+clans (см. resolvePermissions), пока
+  // superadmin не поменяет им роль явно через панель.
   const ALLOWED_ROLES = ['moderator', 'admin', 'superadmin'];
-  const ROLE_LABELS = { user: 'Без доступа', moderator: 'Модератор', admin: 'Админ', superadmin: 'Супердоступ' };
+  const ROLE_LABELS = { user: 'Без доступа', moderator: 'Модератор (устар.)', admin: 'Админ', superadmin: 'Супердоступ' };
+
+  // Гибкие права — по образцу "Прав админов" в Telegram: не общий тир, а
+  // отдельные переключаемые возможности у каждого конкретного admin.
+  // Полный сброс и выдача ролей/прав сюда не входят — они жёстко только
+  // у superadmin (canManageRoles), без исключений и без переключателя.
+  const PERMISSION_DEFS = [
+    { id: 'bans', label: 'Бан и ограничения игроков' },
+    { id: 'clans', label: 'Модерация кланов и ссылок на чаты' },
+    { id: 'stats', label: 'Ивент-баннер и статистика игрока' },
+    { id: 'badges', label: 'Значки-награды' }
+  ];
+  const ALL_PERMISSIONS_OFF = { bans: false, clans: false, stats: false, badges: false };
+  const ALL_PERMISSIONS_ON = { bans: true, clans: true, stats: true, badges: true };
+  function resolvePermissions(user) {
+    if (!user) return { ...ALL_PERMISSIONS_OFF };
+    if (user.role === 'superadmin') return { ...ALL_PERMISSIONS_ON }; // супердоступ — всегда всё, это не настраивается
+    if (user.permissions) return { ...ALL_PERMISSIONS_OFF, ...user.permissions };
+    if (user.role === 'admin') return { ...ALL_PERMISSIONS_ON }; // легаси-admin до появления гибких прав — имел всё
+    if (user.role === 'moderator') return { ...ALL_PERMISSIONS_OFF, bans: true, clans: true }; // легаси-moderator
+    return { ...ALL_PERMISSIONS_OFF };
+  }
 
   let myTelegramId = null;
   let myRole = 'user';
+  let myPermissions = { ...ALL_PERMISSIONS_OFF };
   let foundUserKey = null;
   let badgeDefsCache = {};
 
@@ -482,6 +547,7 @@
       const user = snap.val();
       const role = user?.role || (user?.isAdmin ? 'admin' : 'user');
       myRole = role;
+      myPermissions = resolvePermissions(user);
 
       if (!user || !ALLOWED_ROLES.includes(role)) {
         showScreen('screen-denied');
@@ -596,21 +662,32 @@
     }
   }
 
-  function canEditStats() { return myRole === 'admin' || myRole === 'superadmin'; }
-  function canManageBadges() { return myRole === 'admin' || myRole === 'superadmin'; }
-  function canManageEvent() { return myRole === 'admin' || myRole === 'superadmin'; }
-  // выдача ролей — самое чувствительное действие в панели (может выдать
-  // superadmin кому угодно, включая себя), поэтому только Супердоступ, а не
-  // весь Admin+. См. также database.rules.json — поле role там теперь
-  // разрешено менять с любого прямого запроса к базе, не только из панели
-  // (реальной авторизации в проекте нет, ограничить это правилами нельзя).
+  // Гейты теперь читают myPermissions (см. resolvePermissions), а не
+  // фиксированную роль — так у каждого конкретного admin может быть свой
+  // набор возможностей, а не один общий тир на всех.
+  function canEditStats() { return myPermissions.stats; }
+  function canManageBadges() { return myPermissions.badges; }
+  function canManageEvent() { return myPermissions.stats; }
+  function canManageClans() { return myPermissions.clans; }
+  function canManageBans() { return myPermissions.bans; }
+  // выдача ролей/прав — самое чувствительное действие в панели (может
+  // выдать superadmin или любое право кому угодно, включая себя), поэтому
+  // только Супердоступ, без исключений и без отдельного переключателя. См.
+  // также database.rules.json — поле role там разрешено менять с любого
+  // прямого запроса к базе, не только из панели (реальной авторизации в
+  // проекте нет, ограничить это правилами нельзя).
   function canManageRoles() { return myRole === 'superadmin'; }
 
   function renderRoleManageBlock(userKey, currentRole) {
     const block = document.getElementById('role-manage-block');
     if (!canManageRoles()) { block.style.display = 'none'; block.innerHTML = ''; return; }
     block.style.display = 'flex';
-    block.innerHTML = ['user', 'moderator', 'admin', 'superadmin'].map((r) =>
+    // 'moderator' новым не назначить (см. changeUserRole/resolvePermissions) —
+    // но если у игрока прямо сейчас эта легаси-роль, покажем её в списке,
+    // иначе текущее значение потеряется из вида
+    const roles = ['user', 'admin', 'superadmin'];
+    if (currentRole === 'moderator') roles.unshift('moderator');
+    block.innerHTML = roles.map((r) =>
       `<div class="badge-pill pick${r === currentRole ? ' on' : ''}" data-role="${r}">${ROLE_LABELS[r]}</div>`
     ).join('');
     block.querySelectorAll('[data-role]').forEach((chip) => {
@@ -625,23 +702,85 @@
       ? `Ты меняешь роль СЕБЕ на "${label}" — после этого можешь потерять доступ к панели. Продолжить?`
       : `Сменить роль игрока на "${label}"?`;
     if (!confirm(warning)) return;
-    db.ref('users/' + userKey + '/role').set(newRole).then(() => {
+    db.ref('users/' + userKey).once('value').then((snap) => {
+      const existing = snap.val() || {};
+      const updates = { role: newRole };
+      // новый admin стартует с чистого листа без прав (как в Telegram при
+      // добавлении админа) — если у него уже был свой permissions
+      // (например, снова назначили admin после понижения), не затираем его
+      if (newRole === 'admin' && !existing.permissions) updates.permissions = { ...ALL_PERMISSIONS_OFF };
+      return db.ref('users/' + userKey).update(updates);
+    }).then(() => {
       const targetName = document.getElementById('r-name').textContent;
       const targetPlayerId = document.getElementById('r-id').textContent;
       logAction('role_changed', userKey, targetName, targetPlayerId, `${ROLE_LABELS[oldRole] || oldRole} → ${label}`);
       return db.ref('users/' + userKey).once('value');
-    }).then((snap) => { if (snap.exists()) openUserDetail(userKey, snap.val()); })
-      .catch((err) => { console.error(err); alert('Не удалось изменить роль: ' + (err.message || err)); });
+    }).then((snap) => {
+      if (!snap.exists()) return;
+      const freshUser = snap.val();
+      openUserDetail(userKey, freshUser);
+      // сразу открываем экран прав, как Telegram делает при добавлении
+      // нового админа — иначе свежепромоченный admin молча остаётся без
+      // единого права, пока кто-нибудь не вспомнит их настроить
+      if (newRole === 'admin') openAdminRights(userKey, freshUser);
+    }).catch((err) => { console.error(err); alert('Не удалось изменить роль: ' + (err.message || err)); });
   }
 
-  // Модератор занимается повседневной модерацией (баны/ограничения,
-  // одобрение кланов и ссылок на чаты) — каталог значков и ивент-баннер на
-  // главном экране ближе к настройке самой игры, поэтому только для
-  // Админа/Супердоступа. Вкладку "Ивент" для модератора просто прячем
-  // целиком, а не показываем заблокированной — она не пригодится ему вообще.
+  function renderAdminRightsToggles(userKey, permissions) {
+    const el = document.getElementById('admin-rights-toggles');
+    el.innerHTML = PERMISSION_DEFS.map((p) => `
+      <div class="toggle-row${permissions[p.id] ? ' on' : ''}" data-perm="${p.id}">
+        <div class="toggle-check"></div>
+        <div class="toggle-label">${escapeHtml(p.label)}</div>
+      </div>
+    `).join('');
+    el.querySelectorAll('.toggle-row').forEach((row) => {
+      row.addEventListener('click', () => toggleAdminPermission(userKey, row.dataset.perm, row.classList.contains('on')));
+    });
+  }
+
+  function toggleAdminPermission(userKey, permId, wasOn) {
+    if (!canManageRoles()) return; // на случай подделки клика мимо скрытого UI
+    const newVal = !wasOn;
+    const permLabel = (PERMISSION_DEFS.find((p) => p.id === permId) || {}).label || permId;
+    db.ref('users/' + userKey + '/permissions/' + permId).set(newVal).then(() => {
+      const targetName = document.getElementById('rights-name').textContent;
+      const targetPlayerId = document.getElementById('rights-id').textContent;
+      logAction('admin_permission_changed', userKey, targetName, targetPlayerId, `${permLabel}: ${newVal ? 'включено' : 'выключено'}`);
+      return db.ref('users/' + userKey).once('value');
+    }).then((snap) => {
+      if (snap.exists()) renderAdminRightsToggles(userKey, resolvePermissions(snap.val()));
+    }).catch((err) => { console.error(err); alert('Не удалось изменить право: ' + (err.message || err)); });
+  }
+
+  function openAdminRights(userKey, user) {
+    document.getElementById('rights-name').textContent = user.firstName || 'Без имени';
+    document.getElementById('rights-id').textContent = user.playerId || userKey;
+    const avatar = document.getElementById('rights-avatar');
+    if (user.avatarData) { avatar.style.backgroundImage = `url('${user.avatarData}')`; avatar.textContent = ''; }
+    else { avatar.style.backgroundImage = ''; avatar.textContent = (user.firstName || '??').slice(0, 2).toUpperCase(); }
+    renderAdminRightsToggles(userKey, resolvePermissions(user));
+    document.querySelectorAll('[data-panel]').forEach((p) => p.classList.remove('active'));
+    document.getElementById('panel-admin-rights').classList.add('active');
+    document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+    document.querySelector('.tabs').style.display = 'none';
+  }
+
+  document.getElementById('admin-rights-back').addEventListener('click', () => {
+    document.querySelector('.tabs').style.display = 'flex';
+    document.querySelectorAll('[data-panel]').forEach((p) => p.classList.remove('active'));
+    document.getElementById('panel-players').classList.add('active');
+    document.querySelector('.tab[data-tab="panel"]').classList.add('active');
+  });
+
+  // Кланы — тоже отдельное переключаемое право (canManageClans), а не
+  // часть какого-то тира; вкладку для тех, у кого его нет, просто прячем
+  // целиком, а не показываем заблокированной — как и с "Ивент" ниже.
   function applyRoleUI() {
     const eventTab = document.querySelector('.tab[data-tab="event"]');
     if (eventTab) eventTab.style.display = canManageEvent() ? '' : 'none';
+    const clansTab = document.querySelector('.tab[data-tab="clans"]');
+    if (clansTab) clansTab.style.display = canManageClans() ? '' : 'none';
   }
 
   // ===== значки-награды =====
@@ -738,6 +877,10 @@
       `<div class="admin-empty" style="padding:4px 0 0;">Текущий уровень: <strong>${ROLE_LABELS[role] || role}</strong>${canManageRoles() ? '' : '. Менять роли может только Супердоступ.'}</div>`;
     renderRoleManageBlock(userKey, role);
 
+    const rightsBtn = document.getElementById('btn-open-admin-rights');
+    rightsBtn.style.display = (canManageRoles() && role === 'admin') ? 'block' : 'none';
+    rightsBtn.onclick = () => openAdminRights(userKey, user);
+
     renderStatusBadge(user);
     // ждём, пока каталог значков (badgeDefsCache) хотя бы раз загрузится —
     // иначе если карточку открыли быстрее, чем отработал loadBadgeDefs() при
@@ -759,6 +902,10 @@
       'edit-referee': stats.refereeBattles ?? 0, 'edit-likes': stats.audienceLikes ?? 0
     };
     Object.entries(statFields).forEach(([id, value]) => { const el = document.getElementById(id); if (el) el.value = value; });
+
+    const bansEditable = canManageBans();
+    document.getElementById('ban-manage-block').style.display = bansEditable ? 'flex' : 'none';
+    document.getElementById('ban-manage-locked-note').style.display = bansEditable ? 'none' : 'block';
 
     document.getElementById('admin-empty').style.display = 'none';
     const resultEl = document.getElementById('admin-result');
@@ -797,7 +944,8 @@
     guests_deleted: 'Удалены все гостевые аккаунты',
     clan_approved: 'Клан одобрен', clan_rejected: 'Клан отклонён',
     clan_chat_approved: 'Ссылка на чат клана одобрена', clan_chat_rejected: 'Ссылка на чат клана отклонена',
-    role_changed: 'Изменена роль'
+    role_changed: 'Изменена роль',
+    admin_permission_changed: 'Изменено право администратора'
   };
 
   function logAction(actionType, targetKey, targetName, targetPlayerId, details) {
@@ -871,7 +1019,7 @@
   // ===== бан / ограничения =====
   document.querySelectorAll('.ban-duration-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      if (!foundUserKey) return;
+      if (!foundUserKey || !canManageBans()) return; // на случай подделки клика мимо скрытого UI
       const hours = parseInt(btn.dataset.hours, 10);
       const until = Date.now() + hours * 3600000;
       const targetName = document.getElementById('r-name').textContent;
@@ -884,7 +1032,7 @@
   });
 
   document.getElementById('btn-ban-forever').addEventListener('click', () => {
-    if (!foundUserKey) return;
+    if (!foundUserKey || !canManageBans()) return; // на случай подделки клика мимо скрытого UI
     const targetName = document.getElementById('r-name').textContent;
     const targetPlayerId = document.getElementById('r-id').textContent;
     db.ref('users/' + foundUserKey).update({ status: 'banned', restrictedUntil: null }).then(() => {
@@ -894,7 +1042,7 @@
   });
 
   document.getElementById('btn-unban').addEventListener('click', () => {
-    if (!foundUserKey) return;
+    if (!foundUserKey || !canManageBans()) return; // на случай подделки клика мимо скрытого UI
     const targetName = document.getElementById('r-name').textContent;
     const targetPlayerId = document.getElementById('r-id').textContent;
     db.ref('users/' + foundUserKey).update({ status: 'active', restrictedUntil: null }).then(() => {
@@ -1404,6 +1552,7 @@
   }
 
   function approveClan(code) {
+    if (!canManageClans()) return; // на случай подделки клика мимо скрытой вкладки
     db.ref('clans/' + code).update({ status: 'approved', rejectionReason: null }).then(() => {
       logAction('clan_approved', code, code, code, '');
       loadClansAdminPanel();
@@ -1411,6 +1560,7 @@
   }
 
   function rejectClan(code, reason) {
+    if (!canManageClans()) return; // на случай подделки клика мимо скрытой вкладки
     db.ref('clans/' + code).update({ status: 'rejected', rejectionReason: reason }).then(() => {
       logAction('clan_rejected', code, code, code, 'Причина: ' + reason);
       loadClansAdminPanel();
@@ -1418,6 +1568,7 @@
   }
 
   function approveClanChat(code) {
+    if (!canManageClans()) return; // на случай подделки клика мимо скрытой вкладки
     db.ref('clans/' + code).update({ chatLinkStatus: 'approved', chatLinkRejectionReason: null }).then(() => {
       logAction('clan_chat_approved', code, code, code, '');
       loadClansAdminPanel();
@@ -1425,6 +1576,7 @@
   }
 
   function rejectClanChat(code, reason) {
+    if (!canManageClans()) return; // на случай подделки клика мимо скрытой вкладки
     db.ref('clans/' + code).update({ chatLinkStatus: 'rejected', chatLinkRejectionReason: reason }).then(() => {
       logAction('clan_chat_rejected', code, code, code, 'Причина: ' + reason);
       loadClansAdminPanel();
