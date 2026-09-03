@@ -38,8 +38,13 @@
   .me{ font-size:11px; color:var(--muted); text-align:right; line-height:1.4; }
   .me b{ color:var(--text); font-weight:600; }
 
-  .tabs{ display:flex; gap:2px; border-bottom:1px solid var(--line); margin-bottom:16px; overflow-x:auto; }
-  .tab{ padding:9px 11px; font-size:12.5px; font-weight:600; cursor:pointer; color:var(--muted); user-select:none; border-bottom:2px solid transparent; white-space:nowrap; }
+  /* flex-wrap вместо overflow-x:auto — на узких экранах вкладки не всегда
+     помещаются в одну строку (особенно с учётом того, что часть из них
+     скрыта в зависимости от прав, а видимый набор меняется), и крутить
+     вбок в поисках нужной — раздражает и отвлекает. Перенос на вторую
+     строку сразу показывает все доступные вкладки целиком. */
+  .tabs{ display:flex; flex-wrap:wrap; gap:4px 2px; border-bottom:1px solid var(--line); margin-bottom:16px; }
+  .tab{ padding:8px 9px; font-size:12px; font-weight:600; cursor:pointer; color:var(--muted); user-select:none; border-bottom:2px solid transparent; white-space:nowrap; }
   .tab.active{ color:var(--text); border-bottom-color:var(--gold); }
 
   .screen{ display:none; }
