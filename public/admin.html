@@ -377,10 +377,12 @@
         <div class="section-label">Опасная зона</div>
         <div class="admin-empty" style="text-align:left; padding:0 0 16px; color:var(--live);">
           Необратимо удаляет всю историю боёв — matches, battles и очереди поиска
-          (queue, refereeQueue) — и обнуляет у ВСЕХ игроков очки, месячный рейтинг,
-          статистику, значки-награды и баланс Stars. Сами аккаунты, роли и списки
-          друзей/заявок не трогает. Делай это только перед настоящим стартом
-          бета-теста, когда вся текущая история — просто тестовый мусор.
+          (queue, refereeQueue) — и обнуляет у ВСЕХ игроков очки, месячный рейтинг
+          и статистику. Аккаунты, роли, списки друзей/заявок и значки-награды
+          не трогает — значки остаются как есть, это не сезонная статистика,
+          а память о том, что игрок был в проекте. Делай это только перед
+          настоящим стартом бета-теста, когда вся текущая история — просто
+          тестовый мусор.
         </div>
 
         <label class="field-label">Задать новый пароль сброса (одноразовый — сработает один раз и сотрётся сам)</label>
@@ -399,6 +401,21 @@
         </div>
 
         <div class="admin-empty" id="danger-reset-result" style="display:none; margin-top:14px;"></div>
+
+        <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--line);">
+          <label class="field-label">Принудительная выдача значка всем игрокам</label>
+          <div style="display:flex; gap:8px; margin-bottom:6px;">
+            <select class="field-input" id="danger-badge-select" style="flex:1;"></select>
+            <button class="btn btn-line" id="btn-danger-badge-grant" style="width:auto; padding:0 16px; flex-shrink:0;">Выдать всем</button>
+          </div>
+          <div class="admin-empty" style="text-align:left; padding:0;">
+            Выдаёт выбранный значок абсолютно всем текущим аккаунтам разом —
+            например, чтобы восстановить значок после сброса старой версии,
+            которая их стирала. Если у разных игроков раньше были разные
+            значки — точную историю (кому что выдавали) смотри в «Журнале».
+          </div>
+          <div class="admin-empty" id="danger-badge-grant-result" style="display:none; margin-top:8px; text-align:left;"></div>
+        </div>
       </div>
 
     </div>
@@ -764,6 +781,7 @@
     event_published: 'Опубликован ивент', event_removed: 'Ивент снят с главного экрана',
     full_reset: '⚠️ Полный сброс перед бета-тестом',
     reset_secret_changed: 'Пароль сброса задан/изменён',
+    badge_mass_given: 'Значок выдан всем игрокам',
     clan_approved: 'Клан одобрен', clan_rejected: 'Клан отклонён',
     clan_chat_approved: 'Ссылка на чат клана одобрена', clan_chat_rejected: 'Ссылка на чат клана отклонена',
     role_changed: 'Изменена роль'
@@ -1105,6 +1123,16 @@
     document.getElementById('btn-danger-reset').disabled = false;
     document.getElementById('btn-danger-reset').textContent = 'Подтвердить и сбросить всё';
     document.getElementById('danger-reset-result').style.display = 'none';
+    document.getElementById('danger-badge-grant-result').style.display = 'none';
+    // ждём каталог значков — та же гонка, что и в renderUserBadgesSection:
+    // если открыть вкладку быстрее, чем отработает loadBadgeDefs() при входе,
+    // список будет пуст
+    (badgeDefsReadyPromise || Promise.resolve()).then(() => {
+      const sel = document.getElementById('danger-badge-select');
+      sel.innerHTML = Object.entries(badgeDefsCache).map(([id, def]) =>
+        `<option value="${id}">${escapeHtml(def.emoji || '🏅')} ${escapeHtml(def.label || id)}</option>`
+      ).join('');
+    });
   }
 
   document.getElementById('btn-danger-secret-save').addEventListener('click', async () => {
@@ -1175,11 +1203,14 @@
         update['users/' + key + '/monthlyPeriod'] = null;
         update['users/' + key + '/starsBalance'] = 0;
         update['users/' + key + '/stats'] = { battles: 0, wins: 0, losses: 0, draws: 0, refereeBattles: 0, audienceLikes: 0 };
-        update['users/' + key + '/badges'] = null;
+        // значки-награды больше не трогаем — это не сезонная статистика,
+        // а память об участии, обнулять её вместе с очками смысла нет
+        // (см. форму "Принудительная выдача значка" ниже — на случай если
+        // нужно восстановить/раздать значок заново после старой версии сброса)
       });
       await db.ref().update(update);
       logAction('full_reset', '—', 'Все игроки', '—',
-        `Сброшены очки/статистика/значки у ${userKeys.length} игроков; удалены matches/battles/queue/refereeQueue`);
+        `Сброшены очки/статистика у ${userKeys.length} игроков; удалены matches/battles/queue/refereeQueue`);
       resultEl.textContent = `Готово — сброшено ${userKeys.length} игроков, вся история боёв удалена. Пароль сброса одноразовый — уже стёрт, для следующего раза задай новый.`;
       resultEl.style.display = 'block';
       document.getElementById('danger-secret-input').value = '';
@@ -1193,6 +1224,37 @@
       alert('Не удалось выполнить сброс: ' + (err.message || err));
     } finally {
       btn.textContent = 'Подтвердить и сбросить всё';
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('btn-danger-badge-grant').addEventListener('click', async () => {
+    if (dangerZoneVerifiedRole !== 'superadmin') return; // на случай подделки клика мимо проверки выше
+    const badgeId = document.getElementById('danger-badge-select').value;
+    if (!badgeId) return;
+    const def = badgeDefsCache[badgeId];
+    const label = def?.label || badgeId;
+    if (!confirm(`Выдать значок "${label}" абсолютно всем игрокам?`)) return;
+    const btn = document.getElementById('btn-danger-badge-grant');
+    const resultEl = document.getElementById('danger-badge-grant-result');
+    btn.disabled = true;
+    try {
+      const usersSnap = await db.ref('users').once('value');
+      const users = usersSnap.val() || {};
+      const userKeys = Object.keys(users);
+      const update = {};
+      userKeys.forEach((key) => { update['users/' + key + '/badges/' + badgeId] = true; });
+      await db.ref().update(update);
+      logAction('badge_mass_given', '—', 'Все игроки', '—', `Значок "${label}" принудительно выдан ${userKeys.length} игрокам`);
+      resultEl.textContent = `Готово — значок "${label}" выдан ${userKeys.length} игрокам.`;
+      resultEl.style.display = 'block';
+      if (foundUserKey) {
+        db.ref('users/' + foundUserKey).once('value').then((snap) => { if (snap.exists()) openUserDetail(foundUserKey, snap.val()); });
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Не удалось выдать значок: ' + (err.message || err));
+    } finally {
       btn.disabled = false;
     }
   });
