@@ -200,6 +200,7 @@
       <div class="tab active" data-tab="panel">Панель</div>
       <div class="tab" data-tab="event">Ивент</div>
       <div class="tab" data-tab="logs">Журнал</div>
+      <div class="tab" data-tab="errors" id="tab-errors">Ошибки</div>
       <div class="tab" data-tab="clans">Кланы</div>
       <div class="tab" data-tab="beta">Заявки</div>
       <!-- видна всем, у кого вообще есть доступ к панели (moderator/admin/
@@ -391,6 +392,16 @@
       <div class="section-label" id="log-title">Журнал действий (все)</div>
       <div id="log-list"></div>
       <div class="admin-empty" id="log-empty" style="display:none;">Записей пока нет</div>
+    </div>
+
+    <!-- ===== ошибки, присланные игроками с кнопки "Отправить" на debug-
+         окошке в index.html (см. window.showDebugError там) — не
+         постоянный поток телеметрии, а именно то, что игрок сам решил
+         прислать, так что записей обычно немного. -->
+    <div class="subview" data-panel="errors" id="panel-errors">
+      <div class="section-label" id="errors-title">Присланные ошибки (0)</div>
+      <div id="errors-list"></div>
+      <div class="admin-empty" id="errors-empty" style="display:none;">Пока никто ничего не присылал</div>
     </div>
 
     <!-- ===== модерация кланов: создание клана и ссылка на его Telegram-чат
@@ -697,6 +708,7 @@
       document.querySelectorAll('[data-panel]').forEach(p => p.classList.remove('active'));
       document.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.add('active');
       if (tab.dataset.tab === 'logs') openAllLogs();
+      if (tab.dataset.tab === 'errors') loadErrorReports();
       if (tab.dataset.tab === 'event') loadEventsAdminList();
       if (tab.dataset.tab === 'danger') openDangerZone();
       if (tab.dataset.tab === 'clans') loadClansAdminPanel();
@@ -1113,6 +1125,43 @@
     db.ref('logs').limitToLast(100).once('value').then((snap) => {
       const data = snap.val() || {};
       renderLogEntries(Object.values(data).sort((a, b) => b.timestamp - a.timestamp));
+    });
+  }
+
+  // ===== ошибки, присланные игроками =====
+  // Пишутся в errorReports/<id> самим index.html, когда игрок нажимает
+  // "Отправить" на debug-окошке (см. window.showDebugError там) — это не
+  // автоматическая телеметрия, а именно то, что игрок сам решил отправить,
+  // с полным логом за сессию (report.log), а не только последней строкой.
+  function renderErrorReports(entries) {
+    const listEl = document.getElementById('errors-list');
+    const emptyEl = document.getElementById('errors-empty');
+    document.getElementById('errors-title').textContent = `Присланные ошибки (${entries.length})`;
+    listEl.innerHTML = '';
+    if (!entries.length) { emptyEl.style.display = 'block'; return; }
+    emptyEl.style.display = 'none';
+    entries.forEach(([id, report]) => {
+      const row = document.createElement('div');
+      row.className = 'log-row';
+      const date = new Date(report.createdAt || 0).toLocaleString('ru-RU');
+      const who = report.firstName ? `${escapeHtml(report.firstName)} (${escapeHtml(report.playerId || report.telegramId || '—')})` : (report.telegramId || 'неизвестно');
+      row.innerHTML = `
+        <div class="l-title">${who}</div>
+        <div class="l-body" style="white-space:pre-wrap; word-break:break-word;">${escapeHtml(report.log || '')}</div>
+        <div class="l-time">${date}${report.userAgent ? ' · ' + escapeHtml(report.userAgent) : ''}</div>
+        <button class="btn btn-line" data-report-id="${id}" style="width:100%; margin-top:8px; padding:7px; font-size:11.5px;">Удалить</button>
+      `;
+      row.querySelector('[data-report-id]').addEventListener('click', () => {
+        db.ref('errorReports/' + id).remove().then(loadErrorReports);
+      });
+      listEl.appendChild(row);
+    });
+  }
+
+  function loadErrorReports() {
+    db.ref('errorReports').limitToLast(200).once('value').then((snap) => {
+      const data = snap.val() || {};
+      renderErrorReports(Object.entries(data).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0)));
     });
   }
 
