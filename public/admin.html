@@ -235,6 +235,7 @@
         <div class="r-name" id="r-name">—</div>
         <div class="r-id" id="r-id">—</div>
         <div class="r-id" style="margin-bottom:12px;">Очков: <span id="r-points-val">0</span></div>
+        <div class="r-id" id="r-tickets-line" style="margin-bottom:12px; display:none;">Билеты-множители: <span id="r-tickets-val"></span></div>
         <div id="r-status-badge" style="margin-bottom:12px;"></div>
 
         <div class="r-toggle-row">
@@ -1004,6 +1005,19 @@
     document.getElementById('r-name').textContent = user.firstName || 'Без имени';
     document.getElementById('r-id').textContent = user.playerId || userKey;
     document.getElementById('r-points-val').textContent = user.points ?? 0;
+
+    // билеты-множители — только для просмотра (см. index.html: игрок
+    // получает их кнопкой на ивенте, тратятся сами на следующей победе),
+    // админ их тут не выдаёт и не редактирует, просто видит, что у кого
+    // накопилось
+    const ticketsLine = document.getElementById('r-tickets-line');
+    const tickets = Object.values(user.multiplierTickets || {});
+    if (tickets.length) {
+      ticketsLine.style.display = 'block';
+      document.getElementById('r-tickets-val').textContent = tickets.map((t) => 'x' + t.value).join(', ');
+    } else {
+      ticketsLine.style.display = 'none';
+    }
 
     const rAvatar = document.getElementById('r-avatar');
     if (user.avatarData) { rAvatar.style.backgroundImage = `url('${user.avatarData}')`; rAvatar.textContent = ''; }
