@@ -358,6 +358,16 @@
         <button class="btn btn-line" id="btn-event-create-badge" style="width:100%; margin-top:8px;">+ Создать и выбрать значок</button>
       </div>
 
+      <!-- множитель трофеев — как значок выше, это тоже разовая награда за
+           участие в конкретном ивенте: игрок сам забирает её кнопкой на
+           баннере, но не в коллекцию, а в одноразовый "билет" (см.
+           renderEventMultiplierClaimButton в index.html) — тратится на
+           следующей же победе в рейтинговом бою, умножая награду за неё. -->
+      <div class="field-block">
+        <label class="field-label">Множитель трофеев за участие (тоже забирается кнопкой на баннере — билет на одну победу с наградой x N, дальше сгорает)</label>
+        <select class="field-input" id="event-multiplier-select"></select>
+      </div>
+
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;" class="field-block">
         <div>
           <label class="field-label">Показывать с</label>
@@ -372,48 +382,6 @@
 
       <button class="btn btn-gold" id="btn-event-publish" style="width:100%; margin-bottom:10px;">СОХРАНИТЬ ИВЕНТ</button>
       <button class="btn btn-line" id="btn-event-remove" style="width:100%;">Удалить этот ивент</button>
-
-      <!-- ===== множители трофеев — отдельные от баннерных ивентов записи
-           (mult-events/<id> в базе), можно завести сразу несколько на
-           разные даты/месяцы вперёд. Пока идёт хотя бы один (сейчас между
-           startAt и endAt) — на всех победах в рейтинговых боях (см.
-           refereeDeclareWinner в index.html) начисление трофеев умножается
-           на его множитель; если активны сразу несколько — берётся
-           наибольший, а не их произведение, чтобы буст не улетал в космос. -->
-      <div class="section-label" style="margin-top:26px;">Множитель трофеев</div>
-      <div class="admin-empty" style="padding:0 0 14px; text-align:left;">
-        Пока идёт хотя бы один множитель — все победы в рейтинговых боях приносят трофеев в N раз больше. Можно завести сразу несколько на разные даты вперёд.
-      </div>
-      <div id="mult-admin-list"></div>
-      <div class="admin-empty" id="mult-admin-empty" style="display:none;">Множителей пока нет</div>
-      <button class="btn btn-line" id="btn-mult-new" style="width:100%; margin:4px 0 20px;">+ Новый множитель</button>
-
-      <div class="event-status off" id="mult-status">Новый множитель — ещё не сохранён</div>
-
-      <div class="field-block">
-        <label class="field-label">Название (для себя, игрокам не показывается)</label>
-        <input type="text" class="field-input" id="mult-title-input" placeholder="Например: Новогодние выходные" maxlength="60">
-      </div>
-
-      <div class="field-block">
-        <label class="field-label">Множитель</label>
-        <select class="field-input" id="mult-value-select"></select>
-      </div>
-
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;" class="field-block">
-        <div>
-          <label class="field-label">Действует с</label>
-          <input type="datetime-local" class="field-input" id="mult-start-input">
-        </div>
-        <div>
-          <label class="field-label">Действует до</label>
-          <input type="datetime-local" class="field-input" id="mult-end-input">
-        </div>
-      </div>
-      <div class="admin-empty" style="padding:0 0 14px; text-align:left;">Обе даты обязательны — множитель без границ действовал бы вечно, это не то, для чего он задуман.</div>
-
-      <button class="btn btn-gold" id="btn-mult-publish" style="width:100%; margin-bottom:10px;">СОХРАНИТЬ МНОЖИТЕЛЬ</button>
-      <button class="btn btn-line" id="btn-mult-remove" style="width:100%;">Удалить этот множитель</button>
 
     </div>
 
@@ -729,7 +697,7 @@
       document.querySelectorAll('[data-panel]').forEach(p => p.classList.remove('active'));
       document.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.add('active');
       if (tab.dataset.tab === 'logs') openAllLogs();
-      if (tab.dataset.tab === 'event') { loadEventsAdminList(); loadMultAdminList(); }
+      if (tab.dataset.tab === 'event') loadEventsAdminList();
       if (tab.dataset.tab === 'danger') openDangerZone();
       if (tab.dataset.tab === 'clans') loadClansAdminPanel();
       if (tab.dataset.tab === 'beta') loadBetaApplicationsPanel();
@@ -1094,7 +1062,6 @@
     stats_change: 'Изменение статистики', ban_temp: 'Временный бан', ban_forever: 'Бан навсегда', unban: 'Снятие бана',
     badge_given: 'Выдан значок', badge_revoked: 'Снят значок', badge_created: 'Создан новый значок',
     event_published: 'Опубликован ивент', event_removed: 'Ивент снят с главного экрана',
-    mult_event_saved: 'Множитель трофеев сохранён', mult_event_removed: 'Множитель трофеев удалён',
     full_reset: '⚠️ Полный сброс перед бета-тестом',
     reset_secret_changed: 'Пароль сброса задан/изменён',
     badge_mass_given: 'Значок выдан всем игрокам',
@@ -1271,6 +1238,7 @@
     eventImageData = null;
     renderEventImagePreview();
     renderEventBadgeOptions('');
+    multiplierSelect.value = '';
     document.querySelectorAll('.event-admin-row').forEach(row => row.classList.remove('editing'));
   }
 
@@ -1287,6 +1255,7 @@
     eventImageData = ev.imageData || null;
     renderEventImagePreview();
     renderEventBadgeOptions(ev.badgeId || '');
+    multiplierSelect.value = ev.multiplier ? String(ev.multiplier) : '';
     document.querySelectorAll('.event-admin-row').forEach(row => row.classList.toggle('editing', row.dataset.eventId === id));
     document.getElementById('event-status').scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
@@ -1303,7 +1272,7 @@
         <div class="ea-dot"></div>
         <div class="ea-info">
           <div class="ea-title">${ev.title || 'Без названия'}</div>
-          <div class="ea-sub">${live ? 'Активен сейчас' : 'Не активен'}${ev.badgeId ? ' · со значком' : ''}</div>
+          <div class="ea-sub">${live ? 'Активен сейчас' : 'Не активен'}${ev.badgeId ? ' · со значком' : ''}${ev.multiplier ? ' · билет x' + ev.multiplier : ''}</div>
         </div>
       </div>`;
     }).join('');
@@ -1367,7 +1336,8 @@
     const startAt = fromDatetimeLocalValue(document.getElementById('event-start-input').value);
     const endAt = fromDatetimeLocalValue(document.getElementById('event-end-input').value);
     const badgeId = document.getElementById('event-badge-select').value || null;
-    const payload = { title, description, imageData: eventImageData || null, startAt, endAt, badgeId, createdAt: eventsCache[currentEventId]?.createdAt || Date.now() };
+    const multiplier = Number(multiplierSelect.value) || null;
+    const payload = { title, description, imageData: eventImageData || null, startAt, endAt, badgeId, multiplier, createdAt: eventsCache[currentEventId]?.createdAt || Date.now() };
     const ref = currentEventId ? db.ref('events/' + currentEventId) : db.ref('events').push();
     ref.set(payload).then(() => {
       logAction('event_published', ref.key, title, '—', description);
@@ -1387,107 +1357,19 @@
     }).catch((err) => { console.error(err); alert('Не удалось удалить ивент'); });
   });
 
-  // ===== множители трофеев =====
-  // Пишутся в multiplierEvents/<id> основной базы — index.html сам
-  // проверяет их при начислении трофеев за победу в рейтинговом бою (см.
-  // computeActiveTrophyMultiplier там же). Список работает как копия
-  // списка баннерных ивентов выше (тот же UX: список + форма на один
-  // редактируемый элемент), но это отдельная коллекция — множитель не
-  // обязан идти вместе с баннером и наоборот.
-  let currentMultId = null;
-  let multEventsCache = {};
-
-  const multValueSelect = document.getElementById('mult-value-select');
-  multValueSelect.innerHTML = Array.from({ length: 9 }, (_, i) => i + 2) // x2..x10
-    .map((n) => `<option value="${n}">x${n}</option>`).join('');
-
-  function isMultLive(m) {
-    const now = Date.now();
-    return m.startAt && m.endAt && now >= m.startAt && now <= m.endAt;
-  }
-
-  function resetMultForm() {
-    currentMultId = null;
-    document.getElementById('mult-status').className = 'event-status off';
-    document.getElementById('mult-status').textContent = 'Новый множитель — ещё не сохранён';
-    document.getElementById('mult-title-input').value = '';
-    multValueSelect.value = '2';
-    document.getElementById('mult-start-input').value = '';
-    document.getElementById('mult-end-input').value = '';
-    document.querySelectorAll('.mult-admin-row').forEach((row) => row.classList.remove('editing'));
-  }
-
-  function editMult(id, m) {
-    currentMultId = id;
-    const statusEl = document.getElementById('mult-status');
-    const live = isMultLive(m);
-    statusEl.className = 'event-status ' + (live ? 'on' : 'off');
-    statusEl.textContent = live ? `Сейчас действует — все победы дают x${m.multiplier} трофеев` : 'Сохранён, но сейчас не действует (сейчас вне его дат)';
-    document.getElementById('mult-title-input').value = m.title || '';
-    multValueSelect.value = String(m.multiplier || 2);
-    document.getElementById('mult-start-input').value = toDatetimeLocalValue(m.startAt);
-    document.getElementById('mult-end-input').value = toDatetimeLocalValue(m.endAt);
-    document.querySelectorAll('.mult-admin-row').forEach((row) => row.classList.toggle('editing', row.dataset.multId === id));
-    statusEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }
-
-  function renderMultAdminList() {
-    const listEl = document.getElementById('mult-admin-list');
-    const emptyEl = document.getElementById('mult-admin-empty');
-    const entries = Object.entries(multEventsCache).sort((a, b) => (b[1].startAt || 0) - (a[1].startAt || 0));
-    emptyEl.style.display = entries.length ? 'none' : 'block';
-    listEl.innerHTML = entries.map(([id, m]) => {
-      const live = isMultLive(m);
-      const range = (m.startAt && m.endAt) ? `${new Date(m.startAt).toLocaleDateString('ru-RU')} – ${new Date(m.endAt).toLocaleDateString('ru-RU')}` : 'без дат';
-      return `<div class="event-admin-row mult-admin-row${live ? ' live' : ''}${id === currentMultId ? ' editing' : ''}" data-mult-id="${id}">
-        <div class="ea-dot"></div>
-        <div class="ea-info">
-          <div class="ea-title">x${m.multiplier} · ${m.title || 'Без названия'}</div>
-          <div class="ea-sub">${range}${live ? ' · действует сейчас' : ''}</div>
-        </div>
-      </div>`;
-    }).join('');
-    listEl.querySelectorAll('[data-mult-id]').forEach((row) => {
-      row.addEventListener('click', () => editMult(row.dataset.multId, multEventsCache[row.dataset.multId]));
-    });
-  }
-
-  function loadMultAdminList() {
-    db.ref('multiplierEvents').once('value').then((snap) => {
-      multEventsCache = snap.val() || {};
-      renderMultAdminList();
-    });
-  }
-
-  document.getElementById('btn-mult-new').addEventListener('click', resetMultForm);
-
-  document.getElementById('btn-mult-publish').addEventListener('click', () => {
-    if (!canManageEvent()) return; // защита от прямого вызова мимо скрытой вкладки
-    const title = document.getElementById('mult-title-input').value.trim();
-    const multiplier = Number(multValueSelect.value);
-    const startAt = fromDatetimeLocalValue(document.getElementById('mult-start-input').value);
-    const endAt = fromDatetimeLocalValue(document.getElementById('mult-end-input').value);
-    if (!startAt || !endAt) { alert('Укажи обе даты — начало и конец действия множителя'); return; }
-    if (endAt <= startAt) { alert('Дата окончания должна быть позже даты начала'); return; }
-    const payload = { title, multiplier, startAt, endAt, createdAt: multEventsCache[currentMultId]?.createdAt || Date.now() };
-    const ref = currentMultId ? db.ref('multiplierEvents/' + currentMultId) : db.ref('multiplierEvents').push();
-    ref.set(payload).then(() => {
-      logAction('mult_event_saved', ref.key, title || '—', '—', `x${multiplier}`);
-      currentMultId = ref.key;
-      loadMultAdminList();
-    }).catch((err) => { console.error(err); alert('Не удалось сохранить множитель'); });
-  });
-
-  document.getElementById('btn-mult-remove').addEventListener('click', () => {
-    if (!canManageEvent()) return; // защита от прямого вызова мимо скрытой вкладки
-    if (!currentMultId) { alert('Сначала выбери сохранённый множитель в списке — этот ещё не сохранён'); return; }
-    const title = document.getElementById('mult-title-input').value.trim() || '—';
-    db.ref('multiplierEvents/' + currentMultId).remove().then(() => {
-      logAction('mult_event_removed', currentMultId, title, '—', '');
-      resetMultForm();
-      loadMultAdminList();
-    }).catch((err) => { console.error(err); alert('Не удалось удалить множитель'); });
-  });
+  // ===== множитель трофеев как поле ивента =====
+  // Раньше это была отдельная коллекция с собственными датами — оказалось
+  // неверно: множитель должен работать как одноразовый билет, который
+  // игрок сам забирает кнопкой на баннере ивента (см. renderEventMultiplier-
+  // ClaimButton в index.html), точно как значок чуть выше. Поэтому теперь
+  // это просто ещё одно необязательное поле в events/<id>, использует те
+  // же startAt/endAt ивента (когда баннер показывается — тогда и можно
+  // забрать билет) и тот же currentEventId/resetEventForm/editEvent, что
+  // и остальная форма ивента.
+  const multiplierSelect = document.getElementById('event-multiplier-select');
+  multiplierSelect.innerHTML = '<option value="">Без множителя</option>' +
+    Array.from({ length: 9 }, (_, i) => i + 2) // x2..x10
+      .map((n) => `<option value="${n}">x${n}</option>`).join('');
 
   // ===== "Система" — она же опасная зона: полный сброс перед
   // бета-тестом =====
