@@ -312,11 +312,12 @@
     </div>
 
     <!-- ===== "Аккаунт" — вход в панель с другого устройства/браузера без
-         Telegram. Пароль хранится не в RTDB (она публична на чтение), а в
-         настоящем Firebase Authentication — задаётся/сбрасывается только
-         через api/admin-set-password.js, который проверяет подпись
-         Telegram initData на сервере (см. renderAccountTab/
-         btn-account-set-password в JS). -->
+         Telegram. Пароль хранится не в RTDB (она публична на чтение — хэш
+         оттуда можно было бы скачать и брутфорсить офлайн), а в отдельном
+         защищённом сервисе Firebase Authentication — это не то же самое,
+         что "записать в базу", хоть и часть того же проекта Firebase.
+         Всё целиком на клиенте, без своего сервера — см. renderAccountTab/
+         btn-account-set-password в JS ниже. -->
     <div class="subview" data-panel="account" id="panel-account">
       <div class="admin-card">
         <div class="section-label">Вход в панель с другого устройства</div>
@@ -332,18 +333,28 @@
         </div>
 
         <div id="account-password-form">
+          <div id="account-old-password-wrap" style="display:none;">
+            <label class="field-label">Старый пароль</label>
+            <input type="password" class="field-input" id="account-old-password-input" placeholder="Старый пароль" autocomplete="current-password" style="margin-bottom:10px;">
+          </div>
           <label class="field-label">Новый пароль (минимум 8 символов)</label>
           <input type="password" class="field-input" id="account-password-input" placeholder="Новый пароль" autocomplete="new-password" style="margin-bottom:8px;">
-          <label class="field-label">Повтори пароль</label>
+          <label class="field-label">Повтори новый пароль</label>
           <input type="password" class="field-input" id="account-password-confirm-input" placeholder="Повтори пароль" autocomplete="new-password" style="margin-bottom:10px;">
-          <button class="btn btn-gold" id="btn-account-set-password" style="width:100%;">Задать / сбросить пароль</button>
+          <button class="btn btn-gold" id="btn-account-set-password" style="width:100%;">Сохранить пароль</button>
         </div>
         <div class="admin-empty" id="account-no-telegram-note" style="display:none; text-align:left; padding:0; color:var(--live);">
-          Задать или сбросить пароль можно только при заходе через Telegram-
+          Задать или сменить пароль можно только при заходе через Telegram-
           бота — так пароль-вход на чужом устройстве не может сам себя
           перевыпустить. Открой панель через бота, чтобы это сделать.
         </div>
         <div class="admin-empty" id="account-password-result" style="display:none; margin-top:10px; text-align:left;"></div>
+        <div class="admin-empty" style="text-align:left; padding:14px 0 0; font-size:12px;">
+          Забыл старый пароль? Своего сервера для сброса нет специально —
+          попроси <b>superadmin</b> удалить твой вход в Firebase Console
+          (Authentication → найти по адресу <code id="account-email-hint">—</code> → Delete user),
+          после этого поле "Старый пароль" пропадёт и можно будет задать новый.
+        </div>
       </div>
     </div>
 
@@ -1054,21 +1065,25 @@
   }
 
   // ===== "Аккаунт" — вход в панель с других устройств/браузеров =====
-  // Пароль можно ЗАДАТЬ ИЛИ СБРОСИТЬ только из-под настоящего Telegram-
-  // сеанса (см. api/admin-set-password.js — проверяет подпись tg.initData
-  // на сервере через Firebase Admin SDK). Так у пароль-логина на чужом
-  // устройстве нет возможности перевыпустить сам себя — сброс всегда
-  // требует живого Telegram, это и есть "доверенный канал" для восстановления.
+  // Целиком на клиенте, без своего сервера — firebase-auth-compat.js уже
+  // умеет создавать/менять пароль сам, никакой Vercel/Railway-прослойки
+  // между панелью и Firebase не нужно. Задать/сменить пароль можно только
+  // из-под настоящего Telegram-сеанса (доверяем tg.initDataUnsafe как и
+  // везде в этой панели) — так пароль-вход на чужом устройстве не может
+  // сам себя перевыпустить, не зная старого пароля.
+  let accountFirstTimeSetup = false; // true, если у аккаунта ещё вообще нет пароля
   function renderAccountTab(user) {
     const statusEl = document.getElementById('account-password-status');
     const playerIdEl = document.getElementById('account-playerid-display');
     const formEl = document.getElementById('account-password-form');
     const noTelegramNoteEl = document.getElementById('account-no-telegram-note');
+    const oldPasswordWrap = document.getElementById('account-old-password-wrap');
+    const emailHintEl = document.getElementById('account-email-hint');
     if (!statusEl) return;
 
     playerIdEl.textContent = user.playerId || '—';
 
-    const isFromTelegram = !!tg?.initData;
+    const isFromTelegram = !!tg?.initDataUnsafe?.user;
     formEl.style.display = isFromTelegram ? 'block' : 'none';
     noTelegramNoteEl.style.display = isFromTelegram ? 'none' : 'block';
 
@@ -1076,8 +1091,12 @@
       statusEl.textContent = 'нет PLR-кода — обратись к разработчику';
       return;
     }
-    auth.fetchSignInMethodsForEmail(playerIdToAuthEmail(user.playerId)).then((methods) => {
-      statusEl.textContent = methods.length ? 'пароль задан ✅' : 'пароль ещё не задан';
+    const email = playerIdToAuthEmail(user.playerId);
+    if (emailHintEl) emailHintEl.textContent = email;
+    auth.fetchSignInMethodsForEmail(email).then((methods) => {
+      accountFirstTimeSetup = methods.length === 0;
+      statusEl.textContent = accountFirstTimeSetup ? 'пароль ещё не задан' : 'пароль задан ✅';
+      oldPasswordWrap.style.display = accountFirstTimeSetup ? 'none' : 'block';
     }).catch(() => { statusEl.textContent = '?'; });
   }
 
@@ -1085,30 +1104,43 @@
     const resultEl = document.getElementById('account-password-result');
     resultEl.style.display = 'block';
     resultEl.style.color = '';
+    const oldPassword = document.getElementById('account-old-password-input').value;
     const password = document.getElementById('account-password-input').value;
     const confirm = document.getElementById('account-password-confirm-input').value;
-    if (password.length < 8) { resultEl.style.color = 'var(--live)'; resultEl.textContent = 'Минимум 8 символов'; return; }
+    if (password.length < 8) { resultEl.style.color = 'var(--live)'; resultEl.textContent = 'Новый пароль — минимум 8 символов'; return; }
     if (password !== confirm) { resultEl.style.color = 'var(--live)'; resultEl.textContent = 'Пароли не совпадают'; return; }
-    if (!tg?.initData) { resultEl.style.color = 'var(--live)'; resultEl.textContent = 'Доступно только из Telegram'; return; }
+    if (!tg?.initDataUnsafe?.user) { resultEl.style.color = 'var(--live)'; resultEl.textContent = 'Доступно только из Telegram'; return; }
+
+    const user = (await db.ref('users/' + myTelegramId).once('value')).val();
+    if (!user?.playerId) { resultEl.style.color = 'var(--live)'; resultEl.textContent = 'У аккаунта нет PLR-кода'; return; }
+    const email = playerIdToAuthEmail(user.playerId);
 
     resultEl.style.color = '';
     resultEl.textContent = 'Сохраняем…';
     try {
-      const res = await fetch('/api/admin-set-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ initData: tg.initData, password })
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+      if (accountFirstTimeSetup) {
+        // первый раз — просто создаём вход, ничего доказывать не нужно
+        await auth.createUserWithEmailAndPassword(email, password);
+      } else {
+        // смена уже существующего — Firebase требует свежую сессию, чтобы
+        // сменить чужой (или просто старый) пароль. Расписаться могли и на
+        // другом устройстве, поэтому входим прямо тут же старым паролем.
+        if (!oldPassword) { resultEl.style.color = 'var(--live)'; resultEl.textContent = 'Впиши старый пароль'; return; }
+        await auth.signInWithEmailAndPassword(email, oldPassword);
+        await auth.currentUser.updatePassword(password);
+      }
+      await auth.signOut(); // не хотим, чтобы Telegram-вкладка попутно держала ещё и сессию пароль-входа
       resultEl.style.color = 'var(--gold)';
-      resultEl.textContent = '✅ Готово — теперь можно войти с этим кодом игрока и паролем на другом устройстве';
+      resultEl.textContent = '✅ Готово — теперь можно войти с этим кодом игрока и новым паролем на другом устройстве';
+      document.getElementById('account-old-password-input').value = '';
       document.getElementById('account-password-input').value = '';
       document.getElementById('account-password-confirm-input').value = '';
-      document.getElementById('account-password-status').textContent = 'пароль задан ✅';
+      renderAccountTab(user);
     } catch (err) {
       resultEl.style.color = 'var(--live)';
-      resultEl.textContent = 'Не удалось: ' + (err.message || err);
+      resultEl.textContent = err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential'
+        ? 'Старый пароль неверный'
+        : 'Не удалось: ' + (err.message || err.code || err);
     }
   });
 
