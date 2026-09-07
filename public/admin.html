@@ -383,6 +383,12 @@
           <input type="text" id="event-frame-name" placeholder="Название рамки" style="flex:1; min-width:0; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:9px 12px; color:var(--text); font-size:13px;">
           <input type="number" id="event-frame-price" placeholder="Цена ⭐" min="1" style="width:84px; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:9px; color:var(--text); font-size:13px;">
         </div>
+        <select class="field-input" id="event-frame-effect" style="margin-top:8px;">
+          <option value="none">Без анимации — просто цвет</option>
+          <option value="pulse">Пульсация — мягкое свечение</option>
+          <option value="rotate">Вращение — кольцо вокруг аватара</option>
+          <option value="spikes">Шипы — выступают за край аватара</option>
+        </select>
         <div class="admin-empty" style="padding:6px 0 0; text-align:left;">Оставь название пустым, если у этого ивента не должно быть своей рамки в продаже.</div>
       </div>
 
@@ -1321,6 +1327,7 @@
     document.getElementById('event-frame-color').value = '#F2B705';
     document.getElementById('event-frame-name').value = '';
     document.getElementById('event-frame-price').value = '';
+    document.getElementById('event-frame-effect').value = 'none';
     document.querySelectorAll('.event-admin-row').forEach(row => row.classList.remove('editing'));
   }
 
@@ -1341,6 +1348,7 @@
     document.getElementById('event-frame-color').value = ev.shopFrame?.color || '#F2B705';
     document.getElementById('event-frame-name').value = ev.shopFrame?.name || '';
     document.getElementById('event-frame-price').value = ev.shopFrame?.price || '';
+    document.getElementById('event-frame-effect').value = ev.shopFrame?.effect || 'none';
     document.querySelectorAll('.event-admin-row').forEach(row => row.classList.toggle('editing', row.dataset.eventId === id));
     document.getElementById('event-status').scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
@@ -1424,7 +1432,7 @@
     const multiplier = Number(multiplierSelect.value) || null;
     const frameName = document.getElementById('event-frame-name').value.trim();
     const framePrice = Number(document.getElementById('event-frame-price').value) || 0;
-    const shopFrame = (frameName && framePrice > 0) ? { name: frameName, color: document.getElementById('event-frame-color').value, price: framePrice } : null;
+    const shopFrame = (frameName && framePrice > 0) ? { name: frameName, color: document.getElementById('event-frame-color').value, price: framePrice, effect: document.getElementById('event-frame-effect').value } : null;
     const payload = { title, description, imageData: eventImageData || null, startAt, endAt, badgeId, multiplier, shopFrame, createdAt: eventsCache[currentEventId]?.createdAt || Date.now() };
     const ref = currentEventId ? db.ref('events/' + currentEventId) : db.ref('events').push();
     ref.set(payload).then(() => {
