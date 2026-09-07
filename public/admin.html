@@ -101,6 +101,26 @@
 
   .admin-empty{ text-align:center; color:var(--muted); font-size:13px; padding:20px 0; }
 
+  /* ===== "База" — дерево Firebase RTDB ===== */
+  .db-tree{ font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size:12px; line-height:1.7; overflow-x:auto; }
+  .db-node{ display:flex; align-items:flex-start; gap:5px; padding:2px 5px; border-radius:4px; white-space:nowrap; }
+  .db-node.container{ cursor:pointer; }
+  .db-node.container:hover{ background:var(--panel-2); }
+  .db-node .db-toggle{ width:12px; flex-shrink:0; color:var(--muted); }
+  .db-node .db-key{ color:var(--gold); flex-shrink:0; }
+  .db-node .db-count{ color:var(--muted); flex-shrink:0; }
+  .db-node .db-val{ color:var(--text); white-space:pre-wrap; word-break:break-all; }
+  .db-node .db-val.str{ color:#CE9178; }
+  .db-node .db-val.num{ color:#B5CEA8; }
+  .db-node .db-val.bool{ color:#569CD6; }
+  .db-node .db-val.null{ color:var(--muted); font-style:italic; }
+  .db-children{ margin-left:15px; border-left:1px solid var(--line); padding-left:6px; }
+  @keyframes dbFlash{
+    0%{ background:rgba(62,213,152,0.4); }
+    100%{ background:transparent; }
+  }
+  .db-node.flash{ animation:dbFlash 1000ms ease-out; }
+
   .user-row{ display:flex; align-items:center; gap:12px; padding:9px 11px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); cursor:pointer; margin-bottom:6px; }
   .user-row .u-avatar{ width:32px; height:32px; border-radius:50%; background:var(--panel-2); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex-shrink:0; position:relative; background-size:cover; background-position:center; }
   .user-row .u-online-dot{ position:absolute; bottom:-1px; right:-1px; width:9px; height:9px; border-radius:50%; background:#3ED598; border:2px solid var(--panel); display:none; }
@@ -178,7 +198,7 @@
 <div class="wrap">
 
   <div class="topbar">
-    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Переименовали «Правила платформы» в «Система», разложили опасную зону/обслуживание/бета-тест/аварийный режим по отдельным карточкам вместо одной сплошной ленты, вкладки теперь версионируются.">v1.0</span></div>
+    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Новая вкладка «База» — дерево всей Firebase RTDB с живым обновлением (зелёная подсветка при изменении). Версию теперь бампаем при каждом изменении панели, как и в самой игре.">v1.1</span></div>
     <div class="me" id="me-box" style="display:none;">
       Вошёл как <b id="me-name">—</b><br>
       <span id="me-role">—</span>
@@ -236,6 +256,10 @@
       <div class="tab" data-tab="errors" id="tab-errors">Ошибки</div>
       <div class="tab" data-tab="clans">Кланы</div>
       <div class="tab" data-tab="beta">Заявки</div>
+      <!-- сырой просмотр всей Firebase RTDB деревом — доступ только
+           superadmin (прячется в applyRoleUI, см. canManageRoles), там
+           видно буквально всё, включая привязанные email (googleLinks) -->
+      <div class="tab" data-tab="database" id="tab-database">База</div>
       <!-- видна всем, у кого вообще есть доступ к панели (moderator/admin/
            superadmin) — а вот воспользоваться получится только у
            superadmin, это проверяется заново при каждом открытии вкладки
@@ -528,6 +552,21 @@
       <div class="section-label">Заявки на рассмотрении</div>
       <div id="beta-applications-list"></div>
       <div class="admin-empty" id="beta-applications-empty" style="display:none;">Нет заявок, ожидающих проверки</div>
+    </div>
+
+    <!-- ===== "База" — сырой просмотр всей Firebase RTDB деревом. Верхний
+         уровень получаем дёшево через REST ?shallow=true (просто список
+         ключей, без выкачивания всей базы разом); открытая ветка потом уже
+         живая — db.ref(path).on('value') — и при реальном изменении внутри
+         неё коротко подсвечивается зелёным (см. renderDbNode/diffDbValues
+         в JS). Один запрос на ветку верхнего уровня, а не десятки — если
+         ветка уже открыта живьём, её потомки просто читаются из уже
+         загруженного снимка, без новых запросов к базе. -->
+    <div class="subview" data-panel="database" id="panel-database">
+      <div class="section-label">Firebase RTDB — дерево, живое обновление</div>
+      <div class="admin-card" style="padding:10px 12px;">
+        <div id="db-tree-root" class="db-tree"><div class="admin-empty">Загрузка…</div></div>
+      </div>
     </div>
 
     <!-- ===== "Система" — сброс перед бета-тестом, обслуживание, закрытый
@@ -893,12 +932,16 @@
       tab.classList.add('active');
       document.querySelectorAll('[data-panel]').forEach(p => p.classList.remove('active'));
       document.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.add('active');
+      // ушли с "База" на другую вкладку — снимаем все живые слушатели веток,
+      // незачем продолжать тянуть трафик за экраном, который никто не видит
+      if (tab.dataset.tab !== 'database') detachAllDbLiveBranches();
       if (tab.dataset.tab === 'logs') openAllLogs();
       if (tab.dataset.tab === 'errors') loadErrorReports();
       if (tab.dataset.tab === 'event') loadEventsAdminList();
       if (tab.dataset.tab === 'danger') openDangerZone();
       if (tab.dataset.tab === 'clans') loadClansAdminPanel();
       if (tab.dataset.tab === 'beta') loadBetaApplicationsPanel();
+      if (tab.dataset.tab === 'database') loadDatabaseTree();
       if (tab.dataset.tab === 'account') db.ref('users/' + myTelegramId).once('value').then((s) => renderAccountTab(s.val() || {}));
     });
   });
@@ -1104,6 +1147,10 @@
     if (clansTab) clansTab.style.display = canManageClans() ? '' : 'none';
     const betaTab = document.querySelector('.tab[data-tab="beta"]');
     if (betaTab) betaTab.style.display = canManageBeta() ? '' : 'none';
+    // "База" — сырой доступ буквально ко всей базе (включая googleLinks
+    // с почтами игроков) — только superadmin, без промежуточных прав
+    const databaseTab = document.querySelector('.tab[data-tab="database"]');
+    if (databaseTab) databaseTab.style.display = canManageRoles() ? '' : 'none';
   }
 
   // ===== "Аккаунт" — вход в панель с других устройств/браузеров =====
@@ -2185,6 +2232,183 @@
       logAction('beta_application_rejected', telegramId, '—', telegramId, 'Причина: ' + reason);
       loadBetaApplicationsPanel();
     }).catch((err) => alert('Не удалось отклонить заявку: ' + (err.message || err)));
+  }
+
+  // ===== "База" — дерево всей Firebase RTDB с живым обновлением =====
+  // Идея: верхний уровень (список корневых веток — users/battles/clans/...)
+  // получаем ОДНИМ дешёвым REST-запросом с ?shallow=true — он возвращает
+  // только имена ключей (true для веток, реальное значение для листьев),
+  // а не выкачивает разом всю базу целиком. Открыть живьём (db.ref(path)
+  // .on('value')) можно только конкретную корневую ветку — её потомки
+  // дальше разворачиваются бесплатно из уже загруженного снимка, без
+  // повторных запросов. Закрыл ветку — слушатель снимается (off), больше
+  // не тратим трафик на то, что админ уже не смотрит.
+  const dbTreeState = {
+    rootKeys: null, // null = ещё не загружено; иначе { key: true|<leaf value> }
+    openPaths: new Set(), // UI-состояние "развёрнуто" для ЛЮБОЙ глубины
+    liveBranches: new Map(), // topKey -> { ref, cb, data, ready }
+  };
+
+  function dbValueClass(v) {
+    if (v === null) return 'null';
+    if (typeof v === 'string') return 'str';
+    if (typeof v === 'number') return 'num';
+    if (typeof v === 'boolean') return 'bool';
+    return '';
+  }
+  function dbValuePreview(v) {
+    if (v === null) return 'null';
+    if (typeof v === 'string') return '"' + v + '"';
+    return String(v);
+  }
+  function dbDeepEqual(a, b) {
+    if (a === b) return true;
+    const aObj = a !== null && typeof a === 'object';
+    const bObj = b !== null && typeof b === 'object';
+    if (aObj !== bObj || !aObj) return false;
+    const aKeys = Object.keys(a), bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length) return false;
+    return aKeys.every((k) => dbDeepEqual(a[k], b[k]));
+  }
+  // рекурсивно находит пути, где значение реально изменилось (не просто
+  // "новый объект от Firebase" — сравнение по содержимому), и помечает
+  // ими же всех предков по дороге вниз, чтобы подсветилась и свёрнутая
+  // папка, внутри которой что-то обновилось, а не только сам листик
+  function dbCollectChanges(oldVal, newVal, path, changed) {
+    if (dbDeepEqual(oldVal, newVal)) return;
+    changed.add(path);
+    const oldObj = (oldVal !== null && typeof oldVal === 'object') ? oldVal : null;
+    const newObj = (newVal !== null && typeof newVal === 'object') ? newVal : null;
+    if (!oldObj || !newObj) return;
+    const keys = new Set([...Object.keys(oldObj), ...Object.keys(newObj)]);
+    keys.forEach((k) => dbCollectChanges(oldObj[k], newObj[k], path + '/' + k, changed));
+  }
+
+  const DB_TREE_CHILD_LIMIT = 200;
+
+  // рендер одного уровня детей (используется и для корня — shallowMap с
+  // true/значениями, — и для живых веток — обычный объект с данными)
+  function renderDbLevel(entriesObj, basePath, isShallowRoot, changed) {
+    const keys = Object.keys(entriesObj);
+    const shown = keys.slice(0, DB_TREE_CHILD_LIMIT);
+    let html = shown.map((key) => {
+      const path = basePath ? basePath + '/' + key : key;
+      const raw = entriesObj[key];
+      const isContainer = isShallowRoot ? (raw === true) : (raw !== null && typeof raw === 'object');
+      const flash = changed && changed.has(path) ? ' flash' : '';
+      if (!isContainer) {
+        return `<div class="db-node${flash}" data-db-path="${escapeHtml(path)}">
+          <span class="db-toggle"></span>
+          <span class="db-key">${escapeHtml(key)}</span>:
+          <span class="db-val ${dbValueClass(raw)}">${escapeHtml(dbValuePreview(raw))}</span>
+        </div>`;
+      }
+      const isOpen = dbTreeState.openPaths.has(path);
+      let childCount = isShallowRoot ? null : Object.keys(raw).length;
+      let childrenHtml = '';
+      if (isOpen) {
+        if (isShallowRoot) {
+          // разворачиваем корневую ветку — если для неё уже есть живой
+          // слушатель, потомки берём из его данных, иначе покажем "грузим"
+          const live = dbTreeState.liveBranches.get(key);
+          if (live && live.ready) {
+            childCount = Object.keys(live.data || {}).length;
+            childrenHtml = renderDbLevel(live.data || {}, path, false, changed);
+          } else {
+            childrenHtml = '<div class="admin-empty" style="padding:6px 0;">Загрузка…</div>';
+          }
+        } else {
+          childrenHtml = renderDbLevel(raw, path, false, changed);
+        }
+      }
+      return `<div class="db-node container${flash}" data-db-path="${escapeHtml(path)}">
+          <span class="db-toggle">${isOpen ? '▾' : '▸'}</span>
+          <span class="db-key">${escapeHtml(key)}</span>
+          ${childCount === null ? '' : `<span class="db-count">{${childCount}}</span>`}
+        </div>
+        ${isOpen ? `<div class="db-children">${childrenHtml}</div>` : ''}`;
+    }).join('');
+    if (keys.length > shown.length) {
+      html += `<div class="admin-empty" style="padding:4px 0; text-align:left;">… ещё ${keys.length - shown.length}</div>`;
+    }
+    return html;
+  }
+
+  function renderDbTree(changed) {
+    const rootEl = document.getElementById('db-tree-root');
+    if (!dbTreeState.rootKeys) return;
+    rootEl.innerHTML = renderDbLevel(dbTreeState.rootKeys, '', true, changed || null);
+    rootEl.querySelectorAll('.db-node.container').forEach((node) => {
+      node.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleDbPath(node.dataset.dbPath);
+      });
+    });
+  }
+
+  function toggleDbPath(path) {
+    const isTopLevel = !path.includes('/');
+    if (dbTreeState.openPaths.has(path)) {
+      dbTreeState.openPaths.delete(path);
+      if (isTopLevel) detachDbLiveBranch(path);
+      renderDbTree();
+      return;
+    }
+    dbTreeState.openPaths.add(path);
+    if (isTopLevel && !dbTreeState.liveBranches.has(path)) {
+      attachDbLiveBranch(path);
+    }
+    renderDbTree();
+  }
+
+  function attachDbLiveBranch(topKey) {
+    const branch = { ref: db.ref(topKey), cb: null, data: null, ready: false };
+    branch.cb = branch.ref.on('value', (snap) => {
+      const newData = snap.val() || {};
+      if (!branch.ready) {
+        branch.data = newData;
+        branch.ready = true;
+        renderDbTree();
+        return;
+      }
+      const changed = new Set();
+      dbCollectChanges(branch.data, newData, topKey, changed);
+      branch.data = newData;
+      if (changed.size) renderDbTree(changed);
+    }, (err) => console.error('База: ветка ' + topKey, err));
+    dbTreeState.liveBranches.set(topKey, branch);
+  }
+
+  function detachDbLiveBranch(topKey) {
+    const branch = dbTreeState.liveBranches.get(topKey);
+    if (!branch) return;
+    branch.ref.off('value', branch.cb);
+    dbTreeState.liveBranches.delete(topKey);
+  }
+
+  function detachAllDbLiveBranches() {
+    dbTreeState.liveBranches.forEach((_, topKey) => detachDbLiveBranch(topKey));
+  }
+
+  function loadDatabaseTree() {
+    if (!canManageRoles()) return; // на случай подделки клика мимо скрытой вкладки
+    const rootEl = document.getElementById('db-tree-root');
+    fetch(firebaseConfig.databaseURL + '/.json?shallow=true')
+      .then((r) => r.json())
+      .then((data) => {
+        dbTreeState.rootKeys = data || {};
+        // возврат на вкладку после ухода: detachAllDbLiveBranches() снял
+        // слушателей, но openPaths (что было развёрнуто) не трогали —
+        // переподключаем живые ветки для того, что уже было открыто
+        dbTreeState.openPaths.forEach((path) => {
+          if (!path.includes('/') && !dbTreeState.liveBranches.has(path)) attachDbLiveBranch(path);
+        });
+        renderDbTree();
+      })
+      .catch((err) => {
+        rootEl.innerHTML = '<div class="admin-empty">Не удалось загрузить список веток базы</div>';
+        console.error('База: корневой список', err);
+      });
   }
 </script>
 </body>
