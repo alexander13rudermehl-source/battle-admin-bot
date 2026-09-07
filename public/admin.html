@@ -198,7 +198,7 @@
 <div class="wrap">
 
   <div class="topbar">
-    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Новая вкладка «База» — дерево всей Firebase RTDB с живым обновлением (зелёная подсветка при изменении). Версию теперь бампаем при каждом изменении панели, как и в самой игре.">v1.1</span></div>
+    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Вход с других устройств переделан: вместо email-ссылки — заявка на вход, подтверждаешь сам (в игре или прямо тут, вкладка «Аккаунт»). Без письма — Firebase Auth больше не участвует, суточная квота на письма не мешает.">v1.2</span></div>
     <div class="me" id="me-box" style="display:none;">
       Вошёл как <b id="me-name">—</b><br>
       <span id="me-role">—</span>
@@ -221,15 +221,16 @@
 
   <!-- открыто не из Telegram — единственный путь внутрь: email, привязанный
        заранее (во вкладке "Аккаунт" внутри панели ИЛИ прямо в игре,
-       Настройки → Аккаунт — привязка общая, googleLinks/<uid> одна база на
-       оба проекта). Никакого пароля — Firebase сам присылает ссылку на
-       почту (см. JS ниже — auth.onAuthStateChanged/loadAccountAndShowApp). -->
+       Настройки → Аккаунт — привязка общая, emailLogins/<email> одна база
+       на оба проекта). Никакого письма — вводишь email, заявка на вход
+       уходит владельцу аккаунта, он подтверждает её сам (в игре, Сообщество
+       → Запросы, или прямо тут же — вкладка "Аккаунт", см. JS ниже). -->
   <div class="screen" id="screen-login">
     <div class="center-msg">
       <div class="big">ВХОД В ПАНЕЛЬ</div>
-      <div class="small" style="margin-bottom:18px;">Открыто не из Telegram — войди по email. Привязать его можно во вкладке «Аккаунт» внутри панели (или прямо в игре, Настройки → Аккаунт) — это один и тот же вход.</div>
+      <div class="small" style="margin-bottom:18px;">Открыто не из Telegram — впиши email, привязанный во вкладке «Аккаунт» (или прямо в игре, Настройки → Аккаунт) — заявку на вход подтвердишь сам, без пароля и без письма.</div>
       <input type="email" class="field-input" id="login-email-input" placeholder="твой email" autocomplete="email" style="max-width:260px; margin-bottom:12px; text-align:center;">
-      <button class="btn btn-gold" id="login-submit-btn" style="max-width:260px; width:100%;">Прислать ссылку на почту</button>
+      <button class="btn btn-gold" id="login-submit-btn" style="max-width:260px; width:100%;">Запросить вход</button>
       <div class="small" id="login-error" style="display:none; color:var(--live); margin-top:10px;"></div>
       <div class="small" id="login-status" style="display:none; color:var(--gold); margin-top:10px;"></div>
     </div>
@@ -258,7 +259,7 @@
       <div class="tab" data-tab="beta">Заявки</div>
       <!-- сырой просмотр всей Firebase RTDB деревом — доступ только
            superadmin (прячется в applyRoleUI, см. canManageRoles), там
-           видно буквально всё, включая привязанные email (googleLinks) -->
+           видно буквально всё, включая привязанные email (emailLogins) -->
       <div class="tab" data-tab="database" id="tab-database">База</div>
       <!-- видна всем, у кого вообще есть доступ к панели (moderator/admin/
            superadmin) — а вот воспользоваться получится только у
@@ -354,21 +355,22 @@
     </div>
 
     <!-- ===== "Аккаунт" — вход в панель с другого устройства/браузера без
-         Telegram, по ссылке на email (Firebase "Email link", passwordless).
-         Никакого пароля и своего сервера не нужно — Firebase сам шлёт
-         письмо. Пишет в googleUid/googleEmail и googleLinks/<uid> — ту же
-         связку, что использует "Привязать Google"/"email-ссылка" в самой
-         игре (index.html, Настройки → Аккаунт), поэтому один и тот же
-         email работает и там, и здесь без отдельной настройки. -->
+         Telegram: без пароля и без письма, заявкой на вход, которую
+         подтверждает сам аккаунт (см. loginRequests в JS). Пишет в
+         attachedEmail и emailLogins/<email> — ту же таблицу, что
+         "Войти в свой аккаунт"/"Вход с других устройств" в самой игре
+         (index.html, Настройки → Аккаунт), поэтому один и тот же email
+         работает и там, и здесь без отдельной настройки. -->
     <div class="subview" data-panel="account" id="panel-account">
       <div class="admin-card">
         <div class="section-label">Вход в панель с другого устройства</div>
         <div class="admin-empty" style="text-align:left; padding:0 0 14px;">
           По умолчанию в панель можно зайти только через Telegram-бота. Если
-          привязать здесь email, эту же панель можно будет открыть на
-          компьютере или другом телефоне — Firebase пришлёт ссылку на почту,
-          без пароля и без Telegram. Тот же email, что уже привязан в игре
-          (если привязывали), сработает и тут — привязывать заново не нужно.
+          привязать здесь email, с любого браузера можно будет запросить
+          вход по этому email — заявку подтвердишь сам, ниже или в игре
+          (Сообщество → Запросы). Без пароля и без письма. Тот же email, что
+          уже привязан в игре (если привязывали), сработает и тут —
+          привязывать заново не нужно.
         </div>
         <div class="admin-empty" style="text-align:left; padding:0 0 14px;">
           Статус: <b id="account-email-status">проверяем…</b>
@@ -377,7 +379,7 @@
         <div id="account-email-form">
           <label class="field-label">Email</label>
           <input type="email" class="field-input" id="account-email-input" placeholder="твой email" autocomplete="email" style="margin-bottom:10px;">
-          <button class="btn btn-gold" id="btn-account-send-link" style="width:100%;">Прислать ссылку на почту</button>
+          <button class="btn btn-gold" id="btn-account-send-link" style="width:100%;">Привязать</button>
         </div>
         <div class="admin-empty" id="account-no-telegram-note" style="display:none; text-align:left; padding:0; color:var(--live);">
           Привязать email можно только при заходе через Telegram-бота — так
@@ -385,6 +387,12 @@
           панель через бота, чтобы это сделать.
         </div>
         <div class="admin-empty" id="account-email-result" style="display:none; margin-top:10px; text-align:left;"></div>
+      </div>
+
+      <div class="admin-card">
+        <div class="section-label">Заявки на вход</div>
+        <div id="account-login-requests-list"></div>
+        <div class="admin-empty" id="account-login-requests-empty" style="display:none;">Нет заявок на вход</div>
       </div>
     </div>
 
@@ -727,7 +735,6 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script>
   // ===== та же Firebase-база, что и у основного сайта БАТТЛ =====
   // Этот apiKey — публичный клиентский ключ веб-конфига Firebase, не секрет;
@@ -743,7 +750,12 @@
   };
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
-  const auth = firebase.auth();
+
+  function emailToKey(email) {
+    // Firebase RTDB запрещает "." в ключах — заменяем на "," (та же схема,
+    // что и в index.html, emailLogins там общая на оба проекта)
+    return email.trim().toLowerCase().replace(/\./g, ',');
+  }
 
   const tg = window.Telegram?.WebApp;
   tg?.ready();
@@ -791,10 +803,9 @@
   }
 
   // При заходе из Telegram источник правды для "кто ты" — tgUser.id, как и
-  // раньше. Без Telegram (см. вкладка "Аккаунт" — вход по email-ссылке)
-  // источник правды — сессия Firebase Auth: её uid ищем в googleLinks/<uid> —
-  // той же таблице, куда пишет "Привязать Google"/email-ссылка в самой игре
-  // (index.html, Настройки → Аккаунт), так что привязка общая на оба проекта.
+  // раньше. Без Telegram (см. вкладка "Аккаунт" — запрос на вход) — либо
+  // battleTelegramId, уже сохранённый в localStorage прошлым одобренным
+  // входом, либо экран screen-login (см. ниже).
   function loadAccountAndShowApp(telegramId) {
     myTelegramId = telegramId;
     db.ref('users/' + myTelegramId).once('value').then((snap) => {
@@ -836,92 +847,94 @@
     });
   }
 
-  // Открыта ли страница по ссылке из письма (см. btn-account-send-link
-  // ниже)? Должно завершиться ДО первого чтения auth-состояния — иначе
-  // onAuthStateChanged сработает на ещё не вошедшего пользователя и
-  // "съест" единственный вызов (unsubscribe там нет, но screen-login уже
-  // покажется раньше времени).
-  async function completeEmailLinkSignInIfNeeded() {
-    if (!auth.isSignInWithEmailLink(window.location.href)) return;
-    let email = window.localStorage.getItem('emailForSignIn');
-    if (!email) {
-      // ссылку открыли не на том устройстве/браузере, где её запрашивали —
-      // email там просто негде было сохранить, спрашиваем ещё раз как
-      // подтверждение (стандартная рекомендация Firebase для этого случая)
-      email = window.prompt('Подтверди свой email, чтобы завершить вход:');
-    }
-    if (!email) return;
-    try {
-      const result = await auth.signInWithEmailLink(email, window.location.href);
-      window.localStorage.removeItem('emailForSignIn');
-      const uid = result.user.uid;
-      const params = new URLSearchParams(window.location.search);
-      const linkTelegramId = params.get('linkTelegramId');
-      if (linkTelegramId) {
-        const existingLinkSnap = await db.ref('googleLinks/' + uid).once('value');
-        const existingTelegramId = existingLinkSnap.val();
-        if (!existingTelegramId || existingTelegramId === linkTelegramId) {
-          await db.ref('users/' + linkTelegramId).update({ googleUid: uid, googleEmail: email });
-          await db.ref('googleLinks/' + uid).set(linkTelegramId);
-        }
-      }
-    } catch (err) {
-      alert('Не удалось войти по ссылке: ' + (err.message || err));
-    } finally {
-      // убираем служебные параметры из адресной строки — иначе при
-      // обновлении страницы Firebase попробует обработать ту же ссылку
-      // повторно и упадёт (ссылка одноразовая)
-      window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
-    }
-  }
-
   const tgUser = tg?.initDataUnsafe?.user;
   if (tgUser) {
     loadAccountAndShowApp(String(tgUser.id));
   } else {
-    // не из Telegram — единственный путь внутрь теперь через email-ссылку,
-    // привязанную заранее (во вкладке "Аккаунт" или прямо в игре). Сессия
-    // Firebase Auth запоминается браузером — повторно проходить по ссылке
-    // на каждой перезагрузке не придётся, пока не разлогинишься.
-    completeEmailLinkSignInIfNeeded().then(() => {
-      auth.onAuthStateChanged((fbUser) => {
-        if (document.getElementById('screen-app').classList.contains('active')) return; // уже вошли в этой сессии
-        if (fbUser) {
-          db.ref('googleLinks/' + fbUser.uid).once('value').then((snap) => {
-            const linkedTelegramId = snap.val();
-            if (!linkedTelegramId) {
-              document.getElementById('denied-text').textContent = 'Вход выполнен, но этот email ещё не привязан ни к одному аккаунту.';
-              showScreen('screen-denied');
-              return;
-            }
-            loadAccountAndShowApp(linkedTelegramId);
-          });
-        } else {
-          showScreen('screen-login');
-        }
-      });
-    });
+    // не из Telegram — либо уже одобренный вход запомнен этим браузером
+    // (localStorage battleTelegramId, см. login-submit-btn ниже), либо
+    // показываем экран входа
+    const savedTelegramId = window.localStorage.getItem('battleTelegramId');
+    if (savedTelegramId) {
+      loadAccountAndShowApp(savedTelegramId);
+    } else {
+      showScreen('screen-login');
+    }
   }
 
+  // ===== запрос на вход (без email-ссылки — заявка вместо письма) =====
+  // Ищем, кому принадлежит email (emailLogins/<key> — общая с index.html
+  // таблица), кладём заявку в users/<найденный telegramId>/loginRequests и
+  // ждём, пока её подтвердят — либо в игре (Сообщество → Запросы), либо
+  // прямо здесь же (вкладка "Аккаунт", см. loadAccountLoginRequests ниже).
+  // Тайм-аут ожидания — 5 минут.
+  let activeLoginRequestPath = null;
+  let activeLoginRequestCb = null;
+  let activeLoginRequestTimeout = null;
+  function stopWaitingForLoginApproval() {
+    if (activeLoginRequestPath && activeLoginRequestCb) db.ref(activeLoginRequestPath).off('value', activeLoginRequestCb);
+    if (activeLoginRequestTimeout) clearTimeout(activeLoginRequestTimeout);
+    activeLoginRequestPath = null;
+    activeLoginRequestCb = null;
+    activeLoginRequestTimeout = null;
+  }
   document.getElementById('login-submit-btn')?.addEventListener('click', async () => {
     const email = document.getElementById('login-email-input').value.trim();
     const errEl = document.getElementById('login-error');
     const statusEl = document.getElementById('login-status');
+    const btn = document.getElementById('login-submit-btn');
     errEl.style.display = 'none';
     statusEl.style.display = 'none';
     if (!email || !email.includes('@')) { errEl.textContent = 'Впиши email'; errEl.style.display = 'block'; return; }
+    stopWaitingForLoginApproval();
+    btn.disabled = true;
+    btn.textContent = 'Ищем аккаунт…';
     try {
-      await auth.sendSignInLinkToEmail(email, {
-        url: window.location.origin + window.location.pathname,
-        handleCodeInApp: true
-      });
-      window.localStorage.setItem('emailForSignIn', email);
-      statusEl.textContent = '✅ Письмо отправлено на ' + email + ' — открой его и перейди по ссылке на этом же устройстве.';
+      const linkSnap = await db.ref('emailLogins/' + emailToKey(email)).once('value');
+      const targetTelegramId = linkSnap.val();
+      if (!targetTelegramId) {
+        errEl.textContent = 'Эта почта не привязана ни к одному аккаунту.';
+        errEl.style.display = 'block';
+        return;
+      }
+      const reqRef = db.ref('users/' + targetTelegramId + '/loginRequests').push();
+      await reqRef.set({ device: 'Админ-панель, браузер', requestedAt: Date.now(), status: 'pending' });
+      const reqPath = 'users/' + targetTelegramId + '/loginRequests/' + reqRef.key;
+      statusEl.textContent = '⏳ Заявка отправлена — подтверди её в игре (Сообщество → Запросы) или в самой панели (вкладка «Аккаунт») на устройстве с настоящим Telegram-аккаунтом.';
       statusEl.style.display = 'block';
-      document.getElementById('login-email-input').value = '';
+      btn.textContent = 'Ждём подтверждения…';
+      activeLoginRequestPath = reqPath;
+      activeLoginRequestCb = db.ref(reqPath).on('value', (snap) => {
+        const val = snap.val();
+        if (!val || val.status === 'pending') return;
+        if (val.status === 'approved') {
+          db.ref(reqPath).remove();
+          window.localStorage.setItem('battleTelegramId', targetTelegramId);
+          statusEl.textContent = '✅ Вход разрешён, открываем панель…';
+          stopWaitingForLoginApproval();
+          loadAccountAndShowApp(targetTelegramId);
+        } else if (val.status === 'denied') {
+          db.ref(reqPath).remove();
+          errEl.style.display = 'block';
+          errEl.textContent = 'Отклонено на другом устройстве.';
+          stopWaitingForLoginApproval();
+          btn.disabled = false;
+          btn.textContent = 'Запросить вход';
+        }
+      });
+      activeLoginRequestTimeout = setTimeout(() => {
+        db.ref(reqPath).once('value').then((s) => { if (s.val()?.status === 'pending') db.ref(reqPath).remove(); });
+        stopWaitingForLoginApproval();
+        errEl.style.display = 'block';
+        errEl.textContent = 'Время ожидания истекло, попробуй ещё раз.';
+        btn.disabled = false;
+        btn.textContent = 'Запросить вход';
+      }, 5 * 60 * 1000);
     } catch (err) {
-      errEl.textContent = 'Не удалось отправить: ' + (err.message || err.code || err);
+      errEl.textContent = 'Не удалось отправить запрос: ' + (err.message || err.code || err);
       errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Запросить вход';
     }
   });
 
@@ -1147,32 +1160,32 @@
     if (clansTab) clansTab.style.display = canManageClans() ? '' : 'none';
     const betaTab = document.querySelector('.tab[data-tab="beta"]');
     if (betaTab) betaTab.style.display = canManageBeta() ? '' : 'none';
-    // "База" — сырой доступ буквально ко всей базе (включая googleLinks
+    // "База" — сырой доступ буквально ко всей базе (включая emailLogins
     // с почтами игроков) — только superadmin, без промежуточных прав
     const databaseTab = document.querySelector('.tab[data-tab="database"]');
     if (databaseTab) databaseTab.style.display = canManageRoles() ? '' : 'none';
   }
 
   // ===== "Аккаунт" — вход в панель с других устройств/браузеров =====
-  // Email-ссылка (Firebase "Email link", passwordless) вместо пароля —
-  // никакого своего сервера и Vercel/Railway-прослойки не нужно, Firebase
-  // сам шлёт письмо. Привязать можно только из-под настоящего Telegram-
-  // сеанса (доверяем tg.initDataUnsafe, как и везде в этой панели) — так
-  // вход на чужом устройстве не может сам себя перепривязать. Пишет в
-  // googleUid/googleEmail и googleLinks/<uid> — ту же связку, что
-  // "Привязать Google"/email-ссылка в самой игре (index.html), поэтому
-  // один и тот же email работает в обоих местах без отдельной настройки.
+  // Без письма: email — просто ключ поиска (emailLogins/<email> →
+  // telegramId, общая таблица с index.html), не проверяется на владение.
+  // Привязать можно только из-под настоящего Telegram-сеанса (доверяем
+  // tg.initDataUnsafe, как и везде в этой панели) — так вход на чужом
+  // устройстве не может сам себя перепривязать. Реальный вход
+  // подтверждается вручную заявкой (см. loginRequests ниже), а не письмом.
   function renderAccountTab(user) {
     const statusEl = document.getElementById('account-email-status');
     const formEl = document.getElementById('account-email-form');
     const noTelegramNoteEl = document.getElementById('account-no-telegram-note');
     if (!statusEl) return;
 
-    statusEl.textContent = user.googleEmail ? ('привязан ✅ — ' + user.googleEmail) : 'ещё не привязан';
+    statusEl.textContent = user.attachedEmail ? ('привязан ✅ — ' + user.attachedEmail) : 'ещё не привязан';
 
     const isFromTelegram = !!tg?.initDataUnsafe?.user;
     formEl.style.display = isFromTelegram ? 'block' : 'none';
     noTelegramNoteEl.style.display = isFromTelegram ? 'none' : 'block';
+
+    loadAccountLoginRequests();
   }
 
   document.getElementById('btn-account-send-link')?.addEventListener('click', async () => {
@@ -1184,24 +1197,62 @@
     if (!tg?.initDataUnsafe?.user) { resultEl.style.color = 'var(--live)'; resultEl.textContent = 'Доступно только из Telegram'; return; }
 
     resultEl.style.color = '';
-    resultEl.textContent = 'Отправляем…';
+    resultEl.textContent = 'Привязываем…';
     try {
-      // linkTelegramId в URL — единственный способ узнать, к какому именно
-      // аккаунту привязывать вход, когда ссылку откроют на совсем другом
-      // устройстве без своего Telegram-сеанса
-      await auth.sendSignInLinkToEmail(email, {
-        url: window.location.origin + window.location.pathname + '?linkTelegramId=' + encodeURIComponent(myTelegramId),
-        handleCodeInApp: true
-      });
-      window.localStorage.setItem('emailForSignIn', email);
+      const emailKey = emailToKey(email);
+      const existingSnap = await db.ref('emailLogins/' + emailKey).once('value');
+      const existingTelegramId = existingSnap.val();
+      if (existingTelegramId && existingTelegramId !== myTelegramId) {
+        resultEl.style.color = 'var(--live)';
+        resultEl.textContent = 'Эта почта уже привязана к другому аккаунту.';
+        return;
+      }
+      await db.ref('emailLogins/' + emailKey).set(myTelegramId);
+      await db.ref('users/' + myTelegramId).update({ attachedEmail: email });
       resultEl.style.color = 'var(--gold)';
-      resultEl.textContent = '✅ Письмо отправлено на ' + email + ' — открой его и перейди по ссылке (можно на любом устройстве, включая компьютер).';
+      resultEl.textContent = '✅ Привязано — теперь с другого устройства можно запросить вход по этому email.';
       document.getElementById('account-email-input').value = '';
+      document.getElementById('account-email-status').textContent = 'привязан ✅ — ' + email;
     } catch (err) {
       resultEl.style.color = 'var(--live)';
-      resultEl.textContent = 'Не удалось отправить: ' + (err.message || err.code || err);
+      resultEl.textContent = 'Не удалось привязать: ' + (err.message || err.code || err);
     }
   });
+
+  // заявки на вход можно подтвердить прямо тут (не только в игре) — тот же
+  // users/<myTelegramId>/loginRequests, что слушает ожидающий браузер
+  function loadAccountLoginRequests() {
+    const listEl = document.getElementById('account-login-requests-list');
+    const emptyEl = document.getElementById('account-login-requests-empty');
+    if (!listEl || !myTelegramId) return;
+    db.ref('users/' + myTelegramId + '/loginRequests').once('value').then((snap) => {
+      const requests = snap.val() || {};
+      const pending = Object.keys(requests).filter((key) => requests[key]?.status === 'pending');
+      if (!pending.length) {
+        listEl.innerHTML = '';
+        emptyEl.style.display = 'block';
+        return;
+      }
+      emptyEl.style.display = 'none';
+      listEl.innerHTML = pending.map((key) => `
+        <div style="background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:10px 12px; display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+          <div style="flex:1; min-width:0; font-size:13px; font-weight:600;">🔐 ${escapeHtml(requests[key].device || 'неизвестное устройство')}</div>
+          <button type="button" class="account-approve-login" data-key="${key}" style="background:var(--gold); border:none; color:#0B0B0D; border-radius:100px; padding:7px 12px; font-size:12px; font-weight:700; cursor:pointer; flex-shrink:0;">✓ Разрешить</button>
+          <button type="button" class="account-deny-login" data-key="${key}" style="background:none; border:1px solid var(--line); color:var(--muted); border-radius:100px; width:30px; height:30px; font-size:14px; cursor:pointer; flex-shrink:0;">✕</button>
+        </div>
+      `).join('');
+      listEl.querySelectorAll('.account-approve-login').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          db.ref('users/' + myTelegramId + '/loginRequests/' + btn.dataset.key).update({ status: 'approved' }).then(loadAccountLoginRequests);
+        });
+      });
+      listEl.querySelectorAll('.account-deny-login').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          db.ref('users/' + myTelegramId + '/loginRequests/' + btn.dataset.key).update({ status: 'denied' }).then(loadAccountLoginRequests);
+        });
+      });
+    }).catch((err) => console.error('Заявки на вход', err));
+  }
 
   // ===== значки-награды =====
   // Каталог значков (эмодзи + название) хранится в badgeDefs/<badgeId>,
