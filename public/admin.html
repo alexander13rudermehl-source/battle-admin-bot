@@ -1071,7 +1071,13 @@
   // из-под настоящего Telegram-сеанса (доверяем tg.initDataUnsafe как и
   // везде в этой панели) — так пароль-вход на чужом устройстве не может
   // сам себя перевыпустить, не зная старого пароля.
-  let accountFirstTimeSetup = false; // true, если у аккаунта ещё вообще нет пароля
+  //
+  // "Уже есть пароль или нет" НЕ определяется заранее (fetchSignInMethodsForEmail
+  // ненадёжен — у многих проектов Firebase из соображений приватности
+  // ("email enumeration protection") он всегда возвращает пустой список,
+  // независимо от реального наличия аккаунта). Вместо этого просто
+  // пробуем создать пароль, и если Firebase ответит "такой уже есть" —
+  // только тогда просим старый и повторяем как смену.
   function renderAccountTab(user) {
     const statusEl = document.getElementById('account-password-status');
     const playerIdEl = document.getElementById('account-playerid-display');
@@ -1082,26 +1088,20 @@
     if (!statusEl) return;
 
     playerIdEl.textContent = user.playerId || '—';
+    statusEl.textContent = 'узнаём при сохранении';
+    oldPasswordWrap.style.display = 'none';
+    document.getElementById('account-old-password-input').value = '';
 
     const isFromTelegram = !!tg?.initDataUnsafe?.user;
     formEl.style.display = isFromTelegram ? 'block' : 'none';
     noTelegramNoteEl.style.display = isFromTelegram ? 'none' : 'block';
 
-    if (!user.playerId) {
-      statusEl.textContent = 'нет PLR-кода — обратись к разработчику';
-      return;
-    }
-    const email = playerIdToAuthEmail(user.playerId);
-    if (emailHintEl) emailHintEl.textContent = email;
-    auth.fetchSignInMethodsForEmail(email).then((methods) => {
-      accountFirstTimeSetup = methods.length === 0;
-      statusEl.textContent = accountFirstTimeSetup ? 'пароль ещё не задан' : 'пароль задан ✅';
-      oldPasswordWrap.style.display = accountFirstTimeSetup ? 'none' : 'block';
-    }).catch(() => { statusEl.textContent = '?'; });
+    if (user.playerId) emailHintEl.textContent = playerIdToAuthEmail(user.playerId);
   }
 
   document.getElementById('btn-account-set-password')?.addEventListener('click', async () => {
     const resultEl = document.getElementById('account-password-result');
+    const oldPasswordWrap = document.getElementById('account-old-password-wrap');
     resultEl.style.display = 'block';
     resultEl.style.color = '';
     const oldPassword = document.getElementById('account-old-password-input').value;
@@ -1118,14 +1118,19 @@
     resultEl.style.color = '';
     resultEl.textContent = 'Сохраняем…';
     try {
-      if (accountFirstTimeSetup) {
-        // первый раз — просто создаём вход, ничего доказывать не нужно
+      try {
+        // первая попытка — как будто пароля ещё не было
         await auth.createUserWithEmailAndPassword(email, password);
-      } else {
-        // смена уже существующего — Firebase требует свежую сессию, чтобы
-        // сменить чужой (или просто старый) пароль. Расписаться могли и на
-        // другом устройстве, поэтому входим прямо тут же старым паролем.
-        if (!oldPassword) { resultEl.style.color = 'var(--live)'; resultEl.textContent = 'Впиши старый пароль'; return; }
+      } catch (createErr) {
+        if (createErr.code !== 'auth/email-already-in-use') throw createErr;
+        // пароль уже был — без старого пароля Firebase не даст его сменить
+        if (!oldPassword) {
+          oldPasswordWrap.style.display = 'block';
+          document.getElementById('account-password-status').textContent = 'пароль уже задан ✅';
+          resultEl.style.color = 'var(--live)';
+          resultEl.textContent = 'Пароль уже был задан раньше — впиши старый пароль ниже и нажми ещё раз';
+          return;
+        }
         await auth.signInWithEmailAndPassword(email, oldPassword);
         await auth.currentUser.updatePassword(password);
       }
@@ -1135,7 +1140,7 @@
       document.getElementById('account-old-password-input').value = '';
       document.getElementById('account-password-input').value = '';
       document.getElementById('account-password-confirm-input').value = '';
-      renderAccountTab(user);
+      document.getElementById('account-password-status').textContent = 'пароль задан ✅';
     } catch (err) {
       resultEl.style.color = 'var(--live)';
       resultEl.textContent = err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential'
