@@ -364,7 +364,7 @@ long-polling бота, который просто ждёт сообщений �
    # отдельный системный пользователь, чтобы бот не работал от root
    sudo useradd -r -s /usr/sbin/nologin battlebot || true
 
-   sudo git clone https://github.com/alexander13rudermehl-source/battle-admin-bot /opt/battle-admin-bot
+   sudo git clone https://github.com/botsystemtioxsit/battle-admin-bot /opt/battle-admin-bot
    sudo chown -R battlebot:battlebot /opt/battle-admin-bot
    cd /opt/battle-admin-bot
    sudo -u battlebot npm install --omit=dev
