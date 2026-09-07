@@ -370,6 +370,22 @@
         <select class="field-input" id="event-multiplier-select"></select>
       </div>
 
+      <!-- ивент-магазин: в отличие от значка и множителя выше, это не
+           бесплатная награда за участие, а платная эксклюзивная рамка для
+           аватара — покупается за Stars, только пока идёт этот ивент (см.
+           renderEventShopFrameButton в index.html). Расцветка/имя пишутся
+           прямо игроку при покупке, поэтому рамка не сломается, даже если
+           потом удалить сам ивент. -->
+      <div class="field-block">
+        <label class="field-label">Ивент-магазин: эксклюзивная рамка для аватара (продаётся за Stars, только пока идёт этот ивент)</label>
+        <div style="display:flex; gap:8px;">
+          <input type="color" id="event-frame-color" value="#F2B705" style="width:44px; height:38px; padding:2px; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); cursor:pointer;">
+          <input type="text" id="event-frame-name" placeholder="Название рамки" style="flex:1; min-width:0; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:9px 12px; color:var(--text); font-size:13px;">
+          <input type="number" id="event-frame-price" placeholder="Цена ⭐" min="1" style="width:84px; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:9px; color:var(--text); font-size:13px;">
+        </div>
+        <div class="admin-empty" style="padding:6px 0 0; text-align:left;">Оставь название пустым, если у этого ивента не должно быть своей рамки в продаже.</div>
+      </div>
+
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;" class="field-block">
         <div>
           <label class="field-label">Показывать с</label>
@@ -1302,6 +1318,9 @@
     renderEventImagePreview();
     renderEventBadgeOptions('');
     multiplierSelect.value = '';
+    document.getElementById('event-frame-color').value = '#F2B705';
+    document.getElementById('event-frame-name').value = '';
+    document.getElementById('event-frame-price').value = '';
     document.querySelectorAll('.event-admin-row').forEach(row => row.classList.remove('editing'));
   }
 
@@ -1319,6 +1338,9 @@
     renderEventImagePreview();
     renderEventBadgeOptions(ev.badgeId || '');
     multiplierSelect.value = ev.multiplier ? String(ev.multiplier) : '';
+    document.getElementById('event-frame-color').value = ev.shopFrame?.color || '#F2B705';
+    document.getElementById('event-frame-name').value = ev.shopFrame?.name || '';
+    document.getElementById('event-frame-price').value = ev.shopFrame?.price || '';
     document.querySelectorAll('.event-admin-row').forEach(row => row.classList.toggle('editing', row.dataset.eventId === id));
     document.getElementById('event-status').scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
@@ -1335,7 +1357,7 @@
         <div class="ea-dot"></div>
         <div class="ea-info">
           <div class="ea-title">${ev.title || 'Без названия'}</div>
-          <div class="ea-sub">${live ? 'Активен сейчас' : 'Не активен'}${ev.badgeId ? ' · со значком' : ''}${ev.multiplier ? ' · билет x' + ev.multiplier : ''}</div>
+          <div class="ea-sub">${live ? 'Активен сейчас' : 'Не активен'}${ev.badgeId ? ' · со значком' : ''}${ev.multiplier ? ' · билет x' + ev.multiplier : ''}${ev.shopFrame ? ' · рамка за ' + ev.shopFrame.price + '⭐' : ''}</div>
         </div>
       </div>`;
     }).join('');
@@ -1400,7 +1422,10 @@
     const endAt = fromDatetimeLocalValue(document.getElementById('event-end-input').value);
     const badgeId = document.getElementById('event-badge-select').value || null;
     const multiplier = Number(multiplierSelect.value) || null;
-    const payload = { title, description, imageData: eventImageData || null, startAt, endAt, badgeId, multiplier, createdAt: eventsCache[currentEventId]?.createdAt || Date.now() };
+    const frameName = document.getElementById('event-frame-name').value.trim();
+    const framePrice = Number(document.getElementById('event-frame-price').value) || 0;
+    const shopFrame = (frameName && framePrice > 0) ? { name: frameName, color: document.getElementById('event-frame-color').value, price: framePrice } : null;
+    const payload = { title, description, imageData: eventImageData || null, startAt, endAt, badgeId, multiplier, shopFrame, createdAt: eventsCache[currentEventId]?.createdAt || Date.now() };
     const ref = currentEventId ? db.ref('events/' + currentEventId) : db.ref('events').push();
     ref.set(payload).then(() => {
       logAction('event_published', ref.key, title, '—', description);
