@@ -55,6 +55,22 @@
   .subview{ display:none; }
   .subview.active{ display:block; }
 
+  /* ===== десктоп: тот же брейкпоинт и та же логика, что и в игре
+     (index.html) — реальные мобильные экраны и Telegram WebView никогда не
+     достигают такой ширины, так что мобильная раскладка ниже не
+     затрагивается вообще. Вкладки .tabs становятся вертикальным меню
+     слева, .subview (их всего одна видна за раз через .active) занимает
+     правую колонку той же CSS-грид — оборачивать все .subview в общий
+     контейнер не нужно, грид расставляет прямых детей #screen-app сам. */
+  @media (min-width: 900px){
+    .wrap{ max-width:1100px; }
+    #screen-app.active{ display:grid; grid-template-columns:220px 1fr; align-items:start; gap:28px; }
+    .tabs{ flex-direction:column; flex-wrap:nowrap; border-bottom:none; border-right:1px solid var(--line); padding-right:14px; margin-bottom:0; position:sticky; top:16px; }
+    .tab{ border-bottom:none; border-left:2px solid transparent; border-radius:0 var(--radius) var(--radius) 0; padding:10px 12px; }
+    .tab.active{ border-bottom-color:transparent; border-left-color:var(--gold); background:var(--panel); }
+    .subview{ grid-column:2; }
+  }
+
   .center-msg{ min-height:60vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:32px 12px; }
   .center-msg .big{ font-size:18px; font-weight:700; margin-bottom:10px; }
   .center-msg .small{ color:var(--muted); font-size:13.5px; line-height:1.5; max-width:280px; }
