@@ -201,7 +201,8 @@
     <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Вход с других устройств переделан: вместо email-ссылки — заявка на вход, подтверждаешь сам (в игре или прямо тут, вкладка «Аккаунт»). Без письма — Firebase Auth больше не участвует, суточная квота на письма не мешает.">v1.2</span></div>
     <div class="me" id="me-box" style="display:none;">
       Вошёл как <b id="me-name">—</b><br>
-      <span id="me-role">—</span>
+      <span id="me-role">—</span><br>
+      <a href="#" id="me-logout-link" style="display:none; color:var(--muted); text-decoration:underline;">Выйти</a>
     </div>
   </div>
 
@@ -833,6 +834,10 @@
         document.getElementById('me-box').style.display = 'block';
         document.getElementById('me-name').textContent = user.firstName || 'Игрок';
         document.getElementById('me-role').textContent = ROLE_LABELS[role] || role;
+        // выйти можно только из сессии, поднятой через email-заявку —
+        // сессию внутри Telegram выходить незачем, она и так привязана к
+        // аккаунту через tgUser.id при каждом открытии
+        document.getElementById('me-logout-link').style.display = tgUser ? 'none' : 'inline';
 
         applyRoleUI();
         showScreen('screen-app');
@@ -846,6 +851,12 @@
       showScreen('screen-denied');
     });
   }
+
+  document.getElementById('me-logout-link').addEventListener('click', (e) => {
+    e.preventDefault();
+    window.localStorage.removeItem('battleTelegramId');
+    window.location.reload();
+  });
 
   const tgUser = tg?.initDataUnsafe?.user;
   if (tgUser) {
