@@ -150,6 +150,7 @@
   .admin-result .r-id{ font-size:12.5px; color:var(--muted); margin-bottom:14px; }
   .r-toggle-row{ display:flex; flex-direction:column; align-items:stretch; gap:10px; padding-top:12px; border-top:1px solid var(--line); }
   .r-toggle-label{ font-size:13px; font-weight:600; }
+  .token-reveal{ font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size:13px; background:var(--panel-2); border:1px solid var(--gold); border-radius:var(--radius); padding:10px; word-break:break-all; user-select:all; margin:8px 0; }
 
   .stat-field{ font-size:11px; color:var(--muted); }
   .stat-field input{ width:100%; box-sizing:border-box; margin-top:4px; background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:9px; color:var(--text); }
@@ -198,7 +199,7 @@
 <div class="wrap">
 
   <div class="topbar">
-    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Вход с других устройств переделан: вместо email-ссылки — заявка на вход, подтверждаешь сам (в игре или прямо тут, вкладка «Аккаунт»). Без письма — Firebase Auth больше не участвует, суточная квота на письма не мешает.">v1.2</span></div>
+    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Добавлена защита от угона доступа: Супердоступ может выдать admin/superadmin персональный токен устройства (карточка игрока → «Токен устройства») — без него ничего не меняется, а при попытке использовать токен на двух устройствах одновременно аккаунт блокируется до ручного сброса.">v1.3</span></div>
     <div class="me" id="me-box" style="display:none;">
       Вошёл как <b id="me-name">—</b><br>
       <span id="me-role">—</span><br>
@@ -245,6 +246,38 @@
     <div class="center-msg denied">
       <div class="big">🚨 АВАРИЙНЫЙ РЕЖИМ</div>
       <div class="small">Панель временно закрыта для всех, кроме Супердоступа — что-то пошло не так, и с этим уже разбираются. Доступ вернётся, как только аварийный режим снимут.</div>
+    </div>
+  </div>
+
+  <!-- ===== защита от угона доступа: у каждого admin/superadmin может
+       быть выдан персональный секретный токен устройства
+       (users/<uid>/deviceToken, выдаётся тут же — см. блок "Токен
+       устройства" в карточке игрока, видимый только Супердоступу). Пока
+       токен не выдан — эта защита просто не включена для аккаунта,
+       ничего не меняется. Как только выдан: на этом браузере токен надо
+       ввести один раз (сохраняется в localStorage), и при каждом
+       открытии панели занимается "слот" живой сессии
+       (users/<uid>/deviceSessionId, через onDisconnect — закрыл вкладку,
+       слот освободился сам, без блокировки). Если система замечает
+       второй одновременный слот с тем же токеном — аккаунт навсегда
+       блокируется (users/<uid>/panelLocked), пока Супердоступ не
+       сбросит блокировку вручную (та же карточка). Открытие панели в
+       двух вкладках одного браузера тоже расценивается как коллизия —
+       это ожидаемо, не баг. -->
+  <div class="screen" id="screen-device-pair">
+    <div class="center-msg">
+      <div class="big">ТОКЕН УСТРОЙСТВА</div>
+      <div class="small" style="margin-bottom:18px;">Для этого аккаунта включена защита от угона доступа. Впиши токен, который тебе выдал Супердоступ, — один раз на этом браузере.</div>
+      <input type="text" class="field-input" id="device-token-input" placeholder="токен устройства" autocomplete="off" style="max-width:280px; margin-bottom:12px; text-align:center;">
+      <button class="btn btn-gold" id="device-token-submit-btn" style="max-width:280px; width:100%;">Подтвердить</button>
+      <div class="small" id="device-token-error" style="display:none; color:var(--live); margin-top:10px;"></div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-device-locked">
+    <div class="center-msg denied">
+      <div class="big">🔒 ДОСТУП ЗАБЛОКИРОВАН</div>
+      <div class="small">Токен устройства этого аккаунта был использован на двух сессиях одновременно — доступ закрыт для всех устройств до ручного сброса Супердоступом.</div>
     </div>
   </div>
 
@@ -302,6 +335,18 @@
           <div id="role-info"></div>
           <div id="role-manage-block" style="display:none; flex-wrap:wrap; gap:8px; margin-top:8px;"></div>
           <button class="btn btn-line" id="btn-open-admin-rights" style="display:none; width:100%; margin-top:10px;">⚙️ Настроить права администратора</button>
+        </div>
+
+        <!-- защита от угона доступа (см. комментарий у #screen-device-pair) —
+             видна только Супердоступу, и только у admin/superadmin -->
+        <div class="r-toggle-row" id="device-token-row" style="display:none;">
+          <div class="r-toggle-label">Токен устройства</div>
+          <div id="device-token-status" class="admin-empty" style="padding:4px 0 0;"></div>
+          <div style="display:flex; flex-wrap:wrap; gap:8px;">
+            <button class="btn btn-line" id="btn-device-token-issue" style="flex:1;">Выдать токен доступа</button>
+            <button class="btn btn-line" id="btn-device-token-unlock" style="display:none; flex:1;">Сбросить блокировку</button>
+          </div>
+          <div class="token-reveal" id="device-token-reveal" style="display:none;"></div>
         </div>
 
         <div class="r-toggle-row">
@@ -758,6 +803,44 @@
     return email.trim().toLowerCase().replace(/\./g, ',');
   }
 
+  // ===== токен устройства (защита от угона доступа) — см. CLAUDE.md /
+  // комментарий у #screen-device-pair. Активна только там, где superadmin
+  // явно выдал users/<uid>/deviceToken; для всех остальных — no-op.
+  function randomToken(bytes) {
+    const arr = new Uint8Array(bytes);
+    crypto.getRandomValues(arr);
+    return Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  function deviceTokenStorageKey(uid) { return 'battleAdminDeviceToken_' + uid; }
+  function deviceSessionStorageKey(uid) { return 'battleAdminDeviceSession_' + uid; }
+  function getMySessionId(uid) {
+    const key = deviceSessionStorageKey(uid);
+    let id = sessionStorage.getItem(key);
+    if (!id) {
+      id = randomToken(12);
+      sessionStorage.setItem(key, id);
+    }
+    return id;
+  }
+  // Занимает "слот" живой сессии для этого токена. true = слот наш, можно
+  // работать; false = слот уже занят другой одновременной сессией — вызов
+  // должен заблокировать аккаунт (panelLocked = true), это не наша забота
+  // тут, только сигнал наружу.
+  function claimDeviceSession(uid) {
+    const mySessionId = getMySessionId(uid);
+    const sessionRef = db.ref('users/' + uid + '/deviceSessionId');
+    return sessionRef.once('value').then((snap) => {
+      const current = snap.val();
+      if (current && current !== mySessionId) {
+        return false;
+      }
+      return sessionRef.set(mySessionId).then(() => {
+        sessionRef.onDisconnect().remove();
+        return true;
+      });
+    });
+  }
+
   const tg = window.Telegram?.WebApp;
   tg?.ready();
   tg?.expand();
@@ -831,19 +914,67 @@
           return;
         }
 
-        document.getElementById('me-box').style.display = 'block';
-        document.getElementById('me-name').textContent = user.firstName || 'Игрок';
-        document.getElementById('me-role').textContent = ROLE_LABELS[role] || role;
-        // выйти можно только из сессии, поднятой через email-заявку —
-        // сессию внутри Telegram выходить незачем, она и так привязана к
-        // аккаунту через tgUser.id при каждом открытии
-        document.getElementById('me-logout-link').style.display = tgUser ? 'none' : 'inline';
+        function proceedToApp() {
+          document.getElementById('me-box').style.display = 'block';
+          document.getElementById('me-name').textContent = user.firstName || 'Игрок';
+          document.getElementById('me-role').textContent = ROLE_LABELS[role] || role;
+          // выйти можно только из сессии, поднятой через email-заявку —
+          // сессию внутри Telegram выходить незачем, она и так привязана к
+          // аккаунту через tgUser.id при каждом открытии
+          document.getElementById('me-logout-link').style.display = tgUser ? 'none' : 'inline';
 
-        applyRoleUI();
-        showScreen('screen-app');
-        loadUserList(false);
-        loadBadgeDefs();
-        renderAccountTab(user);
+          applyRoleUI();
+          showScreen('screen-app');
+          loadUserList(false);
+          loadBadgeDefs();
+          renderAccountTab(user);
+        }
+
+        // защита от угона доступа — см. комментарий у #screen-device-pair.
+        // Только admin/superadmin и только когда сам superadmin явно выдал
+        // deviceToken этому аккаунту; иначе — не трогаем, ничего не меняется.
+        const protectedRoles = ['admin', 'superadmin'];
+        if (user.panelLocked && protectedRoles.includes(role)) {
+          showScreen('screen-device-locked');
+          return;
+        }
+        if (user.deviceToken && protectedRoles.includes(role)) {
+          const savedToken = window.localStorage.getItem(deviceTokenStorageKey(myTelegramId));
+          if (savedToken !== user.deviceToken) {
+            showScreen('screen-device-pair');
+            document.getElementById('device-token-submit-btn').onclick = () => {
+              const entered = document.getElementById('device-token-input').value.trim();
+              const errEl = document.getElementById('device-token-error');
+              errEl.style.display = 'none';
+              if (entered !== user.deviceToken) {
+                errEl.textContent = 'Неверный токен.';
+                errEl.style.display = 'block';
+                return;
+              }
+              window.localStorage.setItem(deviceTokenStorageKey(myTelegramId), entered);
+              claimDeviceSession(myTelegramId).then((ok) => {
+                if (!ok) {
+                  db.ref('users/' + myTelegramId + '/panelLocked').set(true);
+                  showScreen('screen-device-locked');
+                  return;
+                }
+                proceedToApp();
+              });
+            };
+            return;
+          }
+          claimDeviceSession(myTelegramId).then((ok) => {
+            if (!ok) {
+              db.ref('users/' + myTelegramId + '/panelLocked').set(true);
+              showScreen('screen-device-locked');
+              return;
+            }
+            proceedToApp();
+          });
+          return;
+        }
+
+        proceedToApp();
       });
     }).catch((err) => {
       console.error(err);
@@ -1082,6 +1213,79 @@
       chip.addEventListener('click', () => changeUserRole(userKey, chip.dataset.role, currentRole));
     });
   }
+
+  // защита от угона доступа — видна только Супердоступу, и только у
+  // admin/superadmin (см. #screen-device-pair). Управляется здесь же, из
+  // карточки игрока, теми же кнопками, что и её выдача/сброс блокировки.
+  function renderDeviceTokenBlock(userKey, user, role) {
+    const row = document.getElementById('device-token-row');
+    const eligible = canManageRoles() && (role === 'admin' || role === 'superadmin');
+    const revealEl = document.getElementById('device-token-reveal');
+    if (!eligible) { row.style.display = 'none'; revealEl.style.display = 'none'; return; }
+    row.style.display = 'flex';
+    revealEl.style.display = 'none';
+    const statusEl = document.getElementById('device-token-status');
+    const issueBtn = document.getElementById('btn-device-token-issue');
+    const unlockBtn = document.getElementById('btn-device-token-unlock');
+    if (user.panelLocked) {
+      statusEl.innerHTML = '<strong style="color:var(--live);">🔒 ЗАБЛОКИРОВАН — токен использован на двух устройствах одновременно</strong>';
+      issueBtn.textContent = 'Перевыпустить токен';
+      unlockBtn.style.display = 'block';
+    } else if (user.deviceToken) {
+      statusEl.innerHTML = '<strong style="color:var(--gold);">Токен выдан ✓</strong>';
+      issueBtn.textContent = 'Перевыпустить токен';
+      unlockBtn.style.display = 'none';
+    } else {
+      statusEl.textContent = 'Токен не выдан — защита от угона выключена.';
+      issueBtn.textContent = 'Выдать токен доступа';
+      unlockBtn.style.display = 'none';
+    }
+  }
+
+  document.getElementById('btn-device-token-issue').addEventListener('click', () => {
+    if (!foundUserKey || !canManageRoles()) return; // на случай подделки клика мимо скрытого UI
+    const uid = foundUserKey;
+    const targetName = document.getElementById('r-name').textContent;
+    const targetPlayerId = document.getElementById('r-id').textContent;
+    const token = randomToken(16);
+    db.ref('users/' + uid + '/deviceToken').set(token)
+      .then(() => db.ref('users/' + uid + '/panelLocked').remove())
+      .then(() => db.ref('users/' + uid + '/deviceSessionId').remove())
+      .then(() => {
+        logAction('device_token_issued', uid, targetName, targetPlayerId, 'Выдан новый токен устройства');
+        return db.ref('users/' + uid).once('value');
+      })
+      .then((snap) => {
+        const freshUser = snap.val();
+        if (!freshUser) return;
+        const role = freshUser.role || (freshUser.isAdmin ? 'admin' : 'user');
+        renderDeviceTokenBlock(uid, freshUser, role);
+        const revealEl = document.getElementById('device-token-reveal');
+        revealEl.innerHTML = 'Скопируй и передай админу вручную — через панель повторно он тут не покажется.<br>' + escapeHtml(token);
+        revealEl.style.display = 'block';
+      })
+      .catch((err) => { console.error(err); alert('Не удалось выдать токен: ' + (err.message || err)); });
+  });
+
+  document.getElementById('btn-device-token-unlock').addEventListener('click', () => {
+    if (!foundUserKey || !canManageRoles()) return; // на случай подделки клика мимо скрытого UI
+    const uid = foundUserKey;
+    const targetName = document.getElementById('r-name').textContent;
+    const targetPlayerId = document.getElementById('r-id').textContent;
+    db.ref('users/' + uid + '/panelLocked').remove()
+      .then(() => db.ref('users/' + uid + '/deviceSessionId').remove())
+      .then(() => {
+        logAction('device_token_unlocked', uid, targetName, targetPlayerId, 'Блокировка по токену устройства снята');
+        return db.ref('users/' + uid).once('value');
+      })
+      .then((snap) => {
+        const freshUser = snap.val();
+        if (!freshUser) return;
+        const role = freshUser.role || (freshUser.isAdmin ? 'admin' : 'user');
+        renderDeviceTokenBlock(uid, freshUser, role);
+      })
+      .catch((err) => { console.error(err); alert('Не удалось снять блокировку: ' + (err.message || err)); });
+  });
 
   function changeUserRole(userKey, newRole, oldRole) {
     if (!canManageRoles() || newRole === oldRole) return;
@@ -1371,6 +1575,7 @@
     document.getElementById('role-info').innerHTML =
       `<div class="admin-empty" style="padding:4px 0 0;">Текущий уровень: <strong>${ROLE_LABELS[role] || role}</strong>${canManageRoles() ? '' : '. Менять роли может только Супердоступ.'}</div>`;
     renderRoleManageBlock(userKey, role);
+    renderDeviceTokenBlock(userKey, user, role);
 
     const rightsBtn = document.getElementById('btn-open-admin-rights');
     rightsBtn.style.display = (canManageRoles() && role === 'admin') ? 'block' : 'none';
