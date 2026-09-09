@@ -199,7 +199,7 @@
 <div class="wrap">
 
   <div class="topbar">
-    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Для superadmin без ещё не заданного токена устройства привязка теперь происходит автоматически и без единого видимого экрана при первом открытии панели — токен никогда не показывается и не передаётся вручную; для admin выдача токена по-прежнему делается вручную через карточку игрока.">v1.4</span></div>
+    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Защита от угона токена устройства больше не привязана к «одной живой сессии» — с уже привязанного браузера можно открывать сколько угодно вкладок и устройств одновременно. Блокировка теперь срабатывает только когда один и тот же токен обнаруживается на ДВУХ РАЗНЫХ аккаунтах — это и есть признак утечки.">v1.5</span></div>
     <div class="me" id="me-box" style="display:none;">
       Вошёл как <b id="me-name">—</b><br>
       <span id="me-role">—</span><br>
@@ -255,15 +255,14 @@
        устройства" в карточке игрока, видимый только Супердоступу). Пока
        токен не выдан — эта защита просто не включена для аккаунта,
        ничего не меняется. Как только выдан: на этом браузере токен надо
-       ввести один раз (сохраняется в localStorage), и при каждом
-       открытии панели занимается "слот" живой сессии
-       (users/<uid>/deviceSessionId, через onDisconnect — закрыл вкладку,
-       слот освободился сам, без блокировки). Если система замечает
-       второй одновременный слот с тем же токеном — аккаунт навсегда
-       блокируется (users/<uid>/panelLocked), пока Супердоступ не
-       сбросит блокировку вручную (та же карточка). Открытие панели в
-       двух вкладках одного браузера тоже расценивается как коллизия —
-       это ожидаемо, не баг. -->
+       ввести один раз (сохраняется в localStorage) — дальше с этого
+       браузера можно открывать сколько угодно вкладок/устройств без
+       ограничений, эксклюзивности сессий тут нет. Настоящая проверка —
+       не занят ли этот же токен ещё и на ДРУГОМ аккаунте
+       (users/<uid>/deviceToken совпал у двух разных uid, см.
+       checkTokenNotDuplicated); если да — блокируются все совпавшие
+       аккаунты (users/<uid>/panelLocked), пока Супердоступ не снимет
+       блокировку вручную (та же карточка). -->
   <div class="screen" id="screen-device-pair">
     <div class="center-msg">
       <div class="big">ТОКЕН УСТРОЙСТВА</div>
@@ -812,32 +811,24 @@
     return Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('');
   }
   function deviceTokenStorageKey(uid) { return 'battleAdminDeviceToken_' + uid; }
-  function deviceSessionStorageKey(uid) { return 'battleAdminDeviceSession_' + uid; }
-  function getMySessionId(uid) {
-    const key = deviceSessionStorageKey(uid);
-    let id = sessionStorage.getItem(key);
-    if (!id) {
-      id = randomToken(12);
-      sessionStorage.setItem(key, id);
-    }
-    return id;
-  }
-  // Занимает "слот" живой сессии для этого токена. true = слот наш, можно
-  // работать; false = слот уже занят другой одновременной сессией — вызов
-  // должен заблокировать аккаунт (panelLocked = true), это не наша забота
-  // тут, только сигнал наружу.
-  function claimDeviceSession(uid) {
-    const mySessionId = getMySessionId(uid);
-    const sessionRef = db.ref('users/' + uid + '/deviceSessionId');
-    return sessionRef.once('value').then((snap) => {
-      const current = snap.val();
-      if (current && current !== mySessionId) {
-        return false;
-      }
-      return sessionRef.set(mySessionId).then(() => {
-        sessionRef.onDisconnect().remove();
+  // Реальная проверка "угона": не "занят ли слот", а "не появился ли
+  // этот же токен на ДРУГОМ аккаунте". Один аккаунт свободно работает с
+  // любого числа вкладок/устройств, если на каждом уже сохранён верный
+  // токен — никакой эксклюзивности сессий тут больше нет. tokenLockCache
+  // не нужен: это разовая проверка при каждом открытии панели.
+  function checkTokenNotDuplicated(uid, token) {
+    return db.ref('users').orderByChild('deviceToken').equalTo(token).once('value').then((snap) => {
+      const matches = snap.val() || {};
+      const otherUids = Object.keys(matches).filter((otherUid) => otherUid !== uid);
+      if (otherUids.length === 0) {
         return true;
-      });
+      }
+      // тот же токен стоит ещё хотя бы у одного другого аккаунта —
+      // блокируем ВСЕ аккаунты, у которых он сейчас совпадает (включая
+      // текущий), это признак утечки/дублирования, а не "кто первый".
+      const updates = {};
+      Object.keys(matches).forEach((matchUid) => { updates[matchUid + '/panelLocked'] = true; });
+      return db.ref('users').update(updates).then(() => false);
     });
   }
 
@@ -950,10 +941,9 @@
           const newToken = randomToken(16);
           db.ref('users/' + myTelegramId + '/deviceToken').set(newToken).then(() => {
             window.localStorage.setItem(deviceTokenStorageKey(myTelegramId), newToken);
-            return claimDeviceSession(myTelegramId);
+            return checkTokenNotDuplicated(myTelegramId, newToken);
           }).then((ok) => {
             if (!ok) {
-              db.ref('users/' + myTelegramId + '/panelLocked').set(true);
               showScreen('screen-device-locked');
               return;
             }
@@ -979,9 +969,8 @@
                 return;
               }
               window.localStorage.setItem(deviceTokenStorageKey(myTelegramId), entered);
-              claimDeviceSession(myTelegramId).then((ok) => {
+              checkTokenNotDuplicated(myTelegramId, entered).then((ok) => {
                 if (!ok) {
-                  db.ref('users/' + myTelegramId + '/panelLocked').set(true);
                   showScreen('screen-device-locked');
                   return;
                 }
@@ -990,9 +979,8 @@
             };
             return;
           }
-          claimDeviceSession(myTelegramId).then((ok) => {
+          checkTokenNotDuplicated(myTelegramId, user.deviceToken).then((ok) => {
             if (!ok) {
-              db.ref('users/' + myTelegramId + '/panelLocked').set(true);
               showScreen('screen-device-locked');
               return;
             }
@@ -1277,7 +1265,6 @@
     const token = randomToken(16);
     db.ref('users/' + uid + '/deviceToken').set(token)
       .then(() => db.ref('users/' + uid + '/panelLocked').remove())
-      .then(() => db.ref('users/' + uid + '/deviceSessionId').remove())
       .then(() => {
         logAction('device_token_issued', uid, targetName, targetPlayerId, 'Выдан новый токен устройства');
         return db.ref('users/' + uid).once('value');
@@ -1300,7 +1287,6 @@
     const targetName = document.getElementById('r-name').textContent;
     const targetPlayerId = document.getElementById('r-id').textContent;
     db.ref('users/' + uid + '/panelLocked').remove()
-      .then(() => db.ref('users/' + uid + '/deviceSessionId').remove())
       .then(() => {
         logAction('device_token_unlocked', uid, targetName, targetPlayerId, 'Блокировка по токену устройства снята');
         return db.ref('users/' + uid).once('value');
