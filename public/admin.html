@@ -199,7 +199,7 @@
 <div class="wrap">
 
   <div class="topbar">
-    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Токен аккаунта (бывший «токен устройства») теперь полностью пассивный и молчаливый: не нужно вводить, копировать или передавать его никогда — ни superadmin, ни admin, ни на первом входе, ни на новом устройстве. Убран экран ручного ввода токена и вся привязка к браузеру через localStorage. Единственная проверка осталась прежней — если один и тот же токен обнаружится у ДВУХ РАЗНЫХ аккаунтов, оба блокируются.">v1.6</span></div>
+    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Убрана тихая авто-выдача токена аккаунта при первом входе (была временным решением на период настройки). Теперь токен появляется только вручную — кнопкой «Выдать» в карточке игрока, и только у Супердоступа. Пока токен не выдан явно, у аккаунта нет этой защиты — как и было до авто-выдачи. Уже существующие токены (в т.ч. полученные раньше через авто-выдачу) не трогаем.">v1.7</span></div>
     <div class="me" id="me-box" style="display:none;">
       Вошёл как <b id="me-name">—</b><br>
       <span id="me-role">—</span><br>
@@ -913,20 +913,13 @@
           showScreen('screen-device-locked');
           return;
         }
-        if (protectedRoles.includes(role)) {
-          // Токен аккаунта — полностью пассивный и молчаливый: ни при выдаче, ни
-          // при входе с любого устройства/браузера ничего вводить не нужно, он
-          // просто существует в базе у каждого admin/superadmin. Единственная
-          // его роль — see checkTokenNotDuplicated: если один и тот же токен
-          // когда-либо обнаружится у ДВУХ РАЗНЫХ аккаунтов, оба блокируются, это
-          // и есть настоящий признак угона/утечки, а не факт открытия с нового
-          // устройства.
-          const tokenPromise = user.deviceToken
-            ? Promise.resolve(user.deviceToken)
-            : db.ref('users/' + myTelegramId + '/deviceToken').set(randomToken(16))
-                .then(() => db.ref('users/' + myTelegramId + '/deviceToken').once('value'))
-                .then((snap) => snap.val());
-          tokenPromise.then((token) => checkTokenNotDuplicated(myTelegramId, token)).then((ok) => {
+        if (user.deviceToken && protectedRoles.includes(role)) {
+          // Токен аккаунта больше никогда не создаётся автоматически — только
+          // вручную, кнопкой "Выдать" в карточке игрока (renderDeviceTokenBlock).
+          // Пока superadmin явно не выдал токен конкретному аккаунту, для него
+          // эта защита просто выключена — так было и до временной авто-выдачи,
+          // которую теперь убрали.
+          checkTokenNotDuplicated(myTelegramId, user.deviceToken).then((ok) => {
             if (!ok) {
               showScreen('screen-device-locked');
               return;
@@ -1202,7 +1195,7 @@
       issueBtn.textContent = 'Перевыпустить токен';
       unlockBtn.style.display = 'none';
     } else {
-      statusEl.textContent = 'Токен ещё не создан — появится автоматически при следующем входе этого аккаунта в панель.';
+      statusEl.textContent = 'Токен не выдан — защита от угона выключена для этого аккаунта, пока ты не выдашь токен вручную.';
       issueBtn.textContent = 'Создать токен вручную';
       unlockBtn.style.display = 'none';
     }
