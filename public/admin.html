@@ -199,7 +199,7 @@
 <div class="wrap">
 
   <div class="topbar">
-    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Добавлена защита от угона доступа: Супердоступ может выдать admin/superadmin персональный токен устройства (карточка игрока → «Токен устройства») — без него ничего не меняется, а при попытке использовать токен на двух устройствах одновременно аккаунт блокируется до ручного сброса.">v1.3</span></div>
+    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Для superadmin без ещё не заданного токена устройства привязка теперь происходит автоматически и без единого видимого экрана при первом открытии панели — токен никогда не показывается и не передаётся вручную; для admin выдача токена по-прежнему делается вручную через карточку игрока.">v1.4</span></div>
     <div class="me" id="me-box" style="display:none;">
       Вошёл как <b id="me-name">—</b><br>
       <span id="me-role">—</span><br>
@@ -936,6 +936,33 @@
         const protectedRoles = ['admin', 'superadmin'];
         if (user.panelLocked && protectedRoles.includes(role)) {
           showScreen('screen-device-locked');
+          return;
+        }
+        if (!user.deviceToken && role === 'superadmin') {
+          // Тихая авто-привязка для супердоступа — по прямой просьбе: токен
+          // никто никогда не должен видеть или кому-то диктовать, даже на
+          // первом входе. Первое устройство, с которого супердоступ открыл
+          // панель после появления этой защиты, автоматически и без всякого
+          // экрана становится единственным разрешённым — так же, как если бы
+          // токен был выдан и тут же введён, просто без видимого шага. Ручная
+          // выдача/сброс через карточку игрока (renderDeviceTokenBlock) по-
+          // прежнему работает поверх этого как аварийный путь.
+          const newToken = randomToken(16);
+          db.ref('users/' + myTelegramId + '/deviceToken').set(newToken).then(() => {
+            window.localStorage.setItem(deviceTokenStorageKey(myTelegramId), newToken);
+            return claimDeviceSession(myTelegramId);
+          }).then((ok) => {
+            if (!ok) {
+              db.ref('users/' + myTelegramId + '/panelLocked').set(true);
+              showScreen('screen-device-locked');
+              return;
+            }
+            proceedToApp();
+          }).catch((err) => {
+            console.error('auto device-token provisioning failed:', err);
+            document.getElementById('denied-text').textContent = 'Не удалось настроить защиту устройства: ' + (err.message || err);
+            showScreen('screen-denied');
+          });
           return;
         }
         if (user.deviceToken && protectedRoles.includes(role)) {
