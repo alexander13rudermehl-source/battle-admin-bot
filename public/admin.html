@@ -192,6 +192,34 @@
   .toggle-row.on .toggle-check{ background:var(--gold); border-color:var(--gold); color:#fff; }
   .toggle-row.on .toggle-check::after{ content:'✓'; }
   .toggle-label{ font-size:14px; }
+
+  /* ===== "Статистика" — плитки-показатели и полосы-бары, портировано из
+     battle-data-admin-bot (там были .card/.stat-tile/.bar-row/.list-row —
+     здесь заведены под местные переменные/паттерн .admin-card) ===== */
+  .stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:4px; }
+  .stat-tile{ background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:12px; }
+  .stat-tile .st-val{ font-size:20px; font-weight:700; line-height:1.2; }
+  .stat-tile .st-label{ font-size:11px; color:var(--muted); margin-top:4px; line-height:1.4; }
+  .bar-row{ display:flex; align-items:center; gap:8px; font-size:12px; margin-bottom:6px; }
+  .bar-row .bar-label{ width:120px; flex-shrink:0; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bar-row .bar-track{ flex:1; height:8px; background:var(--panel-2); border-radius:4px; overflow:hidden; }
+  .bar-row .bar-fill{ height:100%; background:var(--gold); }
+  .bar-row .bar-count{ width:44px; text-align:right; flex-shrink:0; color:var(--text); }
+  .list-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 0; border-bottom:1px solid var(--line); font-size:12px; }
+  .list-row:last-child{ border-bottom:none; }
+  .list-row .meta{ color:var(--muted); }
+  .list-row a{ color:var(--gold); text-decoration:none; font-weight:600; }
+
+  /* ===== "Бэкапы"/"Восстановление" — тоже портировано из battle-data-admin-bot ===== */
+  .warn-banner{ background:rgba(229,73,61,.12); border:1px solid var(--live); border-radius:var(--radius); padding:12px; font-size:12px; line-height:1.5; margin-bottom:16px; }
+  .row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+  .row > *{ flex:1 1 auto; }
+  .status-line{ font-size:12px; margin-top:10px; min-height:16px; }
+  .inline-confirm{ font-size:11px; color:var(--gold); margin-left:8px; opacity:0; transition:opacity .3s; }
+  .inline-confirm.show{ opacity:1; }
+  .token-row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+  .token-row > input{ flex:1 1 220px; }
+  .lock-line{ font-size:12px; color:var(--muted); margin-top:10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 </style>
 </head>
 <body>
@@ -199,7 +227,7 @@
 <div class="wrap">
 
   <div class="topbar">
-    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Вкладка «Система» убрана — перенесена в отдельную панель (battle-data-admin-bot).">v1.8</span></div>
+    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Вернул «Систему» (теперь делегируется галочкой, сброс/lockdown — только superadmin) + добавил Статистику и Бэкапы/Восстановление (данные теперь в приватном battle-data-admin-bot).">v1.9</span></div>
     <div class="me" id="me-box" style="display:none;">
       Вошёл как <b id="me-name">—</b><br>
       <span id="me-role">—</span><br>
@@ -276,10 +304,25 @@
       <div class="tab" data-tab="errors" id="tab-errors">Ошибки</div>
       <div class="tab" data-tab="clans">Кланы</div>
       <div class="tab" data-tab="beta">Заявки</div>
+      <!-- видна всем, у кого вообще есть доступ к панели — отчёт "только
+           для чтения" (см. loadStatsTab), не отдельное переключаемое право -->
+      <div class="tab" data-tab="stats" id="tab-stats">Статистика</div>
       <!-- сырой просмотр всей Firebase RTDB деревом — доступ только
            superadmin (прячется в applyRoleUI, см. canManageRoles), там
            видно буквально всё, включая привязанные email (emailLogins) -->
       <div class="tab" data-tab="database" id="tab-database">База</div>
+      <!-- бэкап/восстановление кода и базы — тоже только superadmin (см.
+           applyRoleUI/canManageRoles), это либо разрушительное действие,
+           либо запись в чужой репозиторий -->
+      <div class="tab" data-tab="backups" id="tab-backups">Бэкапы</div>
+      <div class="tab" data-tab="restore" id="tab-restore">Восстановление</div>
+      <!-- видна всем, у кого вообще есть доступ к панели (moderator/admin/
+           superadmin) — а вот воспользоваться получится только у тех, у
+           кого включено делегируемое право "danger" (см. canManageDanger),
+           и лишь двумя самыми безобидными действиями; сброс и аварийный
+           режим требуют ЖИВОЙ проверки role === 'superadmin' при каждом
+           открытии вкладки (см. openDangerZone), а не один раз при входе -->
+      <div class="tab" data-tab="danger" id="tab-danger">Система</div>
     </div>
 
     <!-- ===== панель управления игроками ===== -->
@@ -588,6 +631,69 @@
       <div class="admin-empty" id="beta-applications-empty" style="display:none;">Нет заявок, ожидающих проверки</div>
     </div>
 
+    <!-- ===== "Статистика" — портировано из battle-data-admin-bot (та же
+         Firebase-база). Всё считается на клиенте из once('value') на
+         users/battles/matches/clans/events — там, где в схеме нет точного
+         поля (например «активность за сутки»), это явно помечено в
+         подписи/hint как оценка, а не выдаётся за точное число. Видна всем,
+         у кого вообще есть доступ к панели — это отчёт "только для чтения",
+         не отдельное переключаемое право, как остальные вкладки. -->
+    <div class="subview" data-panel="stats" id="panel-stats">
+      <div class="admin-card">
+        <div class="admin-empty" id="stats-loading" style="padding:6px 0;">Считаем показатели…</div>
+      </div>
+      <div id="stats-content" style="display:none;">
+
+        <div class="section-label">Игроки и активность</div>
+        <div class="admin-card">
+          <div class="stat-grid" id="stats-players-grid"></div>
+          <div class="admin-empty" style="text-align:left; padding:10px 0 0;">
+            «Активность» — оценка по последнему известному сигналу (онлайн прямо сейчас через presence, либо дата создания аккаунта createdAt), потому что в схеме нет отдельного поля lastSeen/lastActive. Это не точный показатель посещений за период.
+          </div>
+        </div>
+        <div class="admin-card">
+          <div class="section-label">По ролям</div>
+          <div id="stats-roles-bars"></div>
+        </div>
+        <div class="admin-card">
+          <div class="section-label">По лигам (трофеи)</div>
+          <div class="admin-empty" style="text-align:left; padding:0 0 10px;">Пороги лиг — как в игре (index.html, LEAGUES): 0 / 500 / 1500 / 3000 / 6000 / 10000 / 15000.</div>
+          <div id="stats-leagues-bars"></div>
+        </div>
+
+        <div class="section-label">Бои и матчмейкинг</div>
+        <div class="admin-card">
+          <div class="stat-grid" id="stats-battles-grid"></div>
+          <div class="admin-empty" id="stats-battles-hint" style="text-align:left; padding:10px 0 0;"></div>
+        </div>
+        <div class="admin-card">
+          <div class="section-label">Топ игроков по трофеям</div>
+          <div id="stats-top-players"></div>
+        </div>
+
+        <div class="section-label">Экономика</div>
+        <div class="admin-card">
+          <div class="stat-grid" id="stats-economy-grid"></div>
+          <div class="admin-empty" style="text-align:left; padding:10px 0 0;">В базе нет отдельного лога покупок (истории транзакций) — ниже агрегированы только текущие остатки/владения, взятые прямо со счетов игроков (starsBalance, ownedFrames, multiplierTickets), а не журнал платежей.</div>
+        </div>
+
+        <div class="section-label">Кланы и ивенты</div>
+        <div class="admin-card">
+          <div class="stat-grid" id="stats-clans-grid"></div>
+        </div>
+        <div class="admin-card">
+          <div class="section-label">Кланы по числу участников</div>
+          <div id="stats-clans-top"></div>
+        </div>
+        <div class="admin-card">
+          <div class="section-label">Ивенты</div>
+          <div class="admin-empty" style="text-align:left; padding:0 0 10px;">Точного счётчика «сколько игроков поучаствовали» в схеме нет — ниже показано число игроков, у которых на руках есть билет-множитель или значок, привязанный к ивенту (это и есть способ участия, см. index.html) — приблизительный, но реальный сигнал, а не выдумка.</div>
+          <div id="stats-events-list"></div>
+        </div>
+
+      </div>
+    </div>
+
     <!-- ===== "База" — сырой просмотр всей Firebase RTDB деревом. Верхний
          уровень получаем дёшево через REST ?shallow=true (просто список
          ключей, без выкачивания всей базы разом); открытая ветка потом уже
@@ -603,6 +709,286 @@
       </div>
     </div>
 
+    <!-- ===== "Бэкапы"/"Восстановление" — портировано из battle-data-admin-bot
+         (тот же GitHub-токен, тот же lock/unlock-механизм). Доступ только
+         superadmin (canManageRoles) — не делегируется, как и "База": здесь
+         либо запись в чужой репозиторий, либо необратимое восстановление.
+
+         Отличие от источника: battle-data-admin-bot становится ПРИВАТНЫМ
+         репозиторием — листинг снимков и их скачивание больше не работают
+         анонимно, поэтому оба идут через Contents API с Bearer-токеном
+         (см. ghApi/listBackupsAuthed в JS), а не через публичный
+         raw.githubusercontent.com / неавторизованный contents-запрос, как
+         раньше. Восстановление БД по-прежнему без токена — пишет прямо в
+         открытую на запись RTDB. Восстановление кода (index.html,
+         battle-admin-bot) тоже токеном же, эти два репозитория остаются
+         публичными. -->
+    <div class="subview" data-panel="backups" id="panel-backups">
+      <div class="admin-card">
+        <div class="section-label">GitHub-токен</div>
+        <div class="admin-empty" style="text-align:left; padding:0 0 10px;">
+          Нужен для листинга/скачивания снимков (battle-data-admin-bot теперь приватный — анонимное чтение больше не работает) и для кнопки «Сделать бэкап сейчас» и восстановления кода. Токен уходит напрямую в api.github.com из этого браузера (никакого промежуточного сервера нет) и хранится только в localStorage.
+          <br><br>
+          Fine-grained Personal Access Token (github.com → Settings → Developer settings → Fine-grained tokens), выданный только на три репозитория: <b>battle-data-admin-bot</b> (Contents: Read and write — теперь нужно и для чтения снимков, не только для бэкапа; Actions: Read and write — для «Сделать бэкап сейчас»), <b>index.html</b> и <b>battle-admin-bot</b> (оба — Contents: Read and write, для восстановления кода).
+        </div>
+        <div class="token-row">
+          <input type="password" class="field-input" id="gh-token-input" placeholder="github_pat_...">
+          <button class="btn btn-line" id="gh-token-save-btn">Сохранить</button>
+          <button class="btn btn-gold" id="gh-token-lock-btn">Закрепить токен</button>
+          <span class="inline-confirm" id="gh-token-save-confirm">Сохранено ✓</span>
+        </div>
+        <div class="lock-line" id="gh-token-locked-line" style="display:none;">
+          <span>🔒 Токен закреплён</span>
+          <button class="btn btn-line" id="gh-token-change-btn">Изменить токен</button>
+        </div>
+        <div class="status-line" id="gh-token-status"></div>
+      </div>
+
+      <div class="admin-card" id="gh-token-requests-card" style="display:none;">
+        <div class="section-label">Заявки на изменение токена</div>
+        <div class="admin-empty" style="text-align:left; padding:0 0 10px;">Запросы на разблокировку токена с других устройств/браузеров. Подтверждай только те, что ты сам инициировал.</div>
+        <div id="gh-token-requests-list"></div>
+      </div>
+
+      <div class="admin-card">
+        <div class="section-label">Сделать бэкап сейчас</div>
+        <div class="admin-empty" style="text-align:left; padding:0 0 10px;">Запускает оба workflow в battle-data-admin-bot немедленно (обычно они срабатывают раз в сутки по расписанию): свежий zip кода index.html и battle-admin-bot, свежий JSON всей базы. Снимок появится в списках ниже примерно через 1–2 минуты — тогда обнови страницу.</div>
+        <button class="btn btn-gold" id="backup-now-btn" style="width:100%;">Сделать бэкап сейчас</button>
+        <div class="status-line" id="backup-now-status"></div>
+      </div>
+
+      <div class="admin-card">
+        <div class="section-label">Код — index.html</div>
+        <div class="admin-empty" style="text-align:left; padding:0 0 8px;">Ежедневный zip-снимок исходников репозитория index.html.</div>
+        <div id="list-code-index"></div>
+      </div>
+
+      <div class="admin-card">
+        <div class="section-label">Код — battle-admin-bot</div>
+        <div class="admin-empty" style="text-align:left; padding:0 0 8px;">Ежедневный zip-снимок исходников репозитория battle-admin-bot.</div>
+        <div id="list-code-admin"></div>
+      </div>
+
+      <div class="admin-card">
+        <div class="section-label">База данных</div>
+        <div class="admin-empty" style="text-align:left; padding:0 0 8px;">Ежедневный экспорт всей Firebase RTDB (zolotaya-kletka) в JSON.</div>
+        <div id="list-db"></div>
+      </div>
+    </div>
+
+    <div class="subview" data-panel="restore" id="panel-restore">
+      <div class="warn-banner">
+        ⚠️ Восстановление — необратимое действие. Восстановление базы данных <b>полностью заменяет</b> текущую базу содержимым снимка. Восстановление кода <b>полностью заменяет</b> файлы репозитория состоянием на момент бэкапа — всё, что было добавлено после снимка, будет потеряно в этом репозитории. Дважды проверь дату перед подтверждением.
+      </div>
+
+      <div class="admin-card">
+        <div class="section-label">Восстановить базу данных</div>
+        <div class="admin-empty" style="text-align:left; padding:0 0 8px;">Пишет содержимое выбранного снимка прямо в Firebase RTDB (правила базы и так разрешают публичную запись — GitHub-токен для этого не нужен, только подтверждение ниже).</div>
+        <div class="row">
+          <select class="field-input" id="restore-db-select"></select>
+        </div>
+        <div class="row">
+          <input type="text" class="field-input" id="restore-db-confirm" placeholder="Впиши ВОССТАНОВИТЬ для подтверждения">
+          <button class="btn btn-live" id="restore-db-btn">Восстановить базу</button>
+        </div>
+        <div class="status-line" id="restore-db-status"></div>
+      </div>
+
+      <div class="admin-card">
+        <div class="section-label">Восстановить код</div>
+        <div class="admin-empty" style="text-align:left; padding:0 0 8px;">Требует GitHub-токен выше — заменяет файлы выбранного репозитория его состоянием на дату снимка одним коммитом в main.</div>
+        <div class="row">
+          <select class="field-input" id="restore-code-repo">
+            <option value="index.html">index.html</option>
+            <option value="battle-admin-bot">battle-admin-bot</option>
+          </select>
+          <select class="field-input" id="restore-code-select"></select>
+        </div>
+        <div class="row">
+          <input type="text" class="field-input" id="restore-code-confirm" placeholder="Впиши ВОССТАНОВИТЬ для подтверждения">
+          <button class="btn btn-live" id="restore-code-btn">Восстановить код</button>
+        </div>
+        <div class="status-line" id="restore-code-status"></div>
+      </div>
+    </div>
+
+    <!-- ===== "Система" — сброс перед бета-тестом, обслуживание, закрытый
+         бета-тест и аварийный режим, название вкладки нарочно нейтральное.
+         Видят её все, у кого вообще есть доступ к панели (moderator/admin/
+         superadmin) — но воспользоваться получится только у тех, у кого
+         включено делегируемое право "danger" (см. canManageDanger,
+         applyRoleUI). Право проверяется заново живым запросом к базе при
+         КАЖДОМ открытии вкладки (см. openDangerZone в JS), а не один раз
+         при входе в панель — так если право/роль сменили, пока вкладка
+         панели просто лежала открытой, старый доступ не сохранится.
+
+         Два самых необратимых/критических действия — полный сброс истории
+         и аварийный режим — НЕ делегируются вообще, несмотря на "danger":
+         они дополнительно жёстко требуют role === 'superadmin' (см.
+         guard на кнопках btn-danger-reset/toggle-emergency ниже) — у
+         делегированного admin с включённым "danger" эти два блока либо
+         скрыты, либо показывают явное сообщение вместо органов управления.
+
+         Второй барьер сброса — секретный пароль, хранится в самой базе
+         (config/resetSecret). Задать/сменить его можно прямо здесь, в
+         панели (форма "Задать новый пароль" ниже). Пароль одноразовый:
+         после каждого УСПЕШНОГО сброса он автоматически стирается из базы
+         вместе с остальными данными. -->
+
+    <div class="subview" data-panel="danger" id="panel-danger">
+
+      <div class="center-msg" id="danger-checking" style="min-height:30vh;">
+        <div class="big">Проверяем доступ…</div>
+        <div class="small">Секунду — сверяемся с базой, у кого сейчас есть право на эту вкладку.</div>
+      </div>
+
+      <div id="danger-denied" style="display:none;">
+        <div class="section-label">Опасная зона</div>
+        <div class="admin-empty" style="text-align:left; padding:0;">
+          Обслуживание платформы и полный сброс перед бета-тестом — действие
+          для тех, кому явно выдано право «Система» (см. «Настроить права»
+          в карточке игрока), а два самых критичных пункта — только для
+          Супердоступа. У твоей текущей роли (<b id="danger-denied-role">—</b>)
+          сейчас нет прав даже на безопасную часть этой вкладки.
+        </div>
+      </div>
+
+      <div id="danger-allowed" style="display:none;">
+
+        <!-- рабочие переключатели — то, чем пользуются часто и без риска
+             необратимо что-то потерять, поэтому идут первыми. Доступны
+             всем с правом "danger", без требования superadmin. -->
+        <div class="admin-card">
+          <div class="section-label">Режим обслуживания (для обновлений/тестов)</div>
+          <div class="admin-empty" style="text-align:left; padding:0 0 10px;">
+            Закрывает основной сайт для обычных игроков — они увидят
+            экран «Идут технические работы». Модератор/Админ/Супердоступ
+            заходят как обычно, чтобы проверить обновление до того, как
+            открыть его всем.
+          </div>
+          <div class="toggle-row" id="toggle-maintenance">
+            <div class="toggle-check"></div>
+            <div class="toggle-label">Включён</div>
+          </div>
+          <label class="field-label" style="margin-top:12px;">Сообщение для игроков (необязательно)</label>
+          <textarea class="field-input" id="maintenance-message-input" placeholder="Скоро вернёмся — попробуй зайти чуть позже." rows="2"></textarea>
+          <button class="btn btn-line" id="btn-save-maintenance-message" style="width:100%; margin-top:8px;">Сохранить сообщение</button>
+        </div>
+
+        <div class="admin-card">
+          <div class="section-label">Закрытый бета-тест</div>
+          <div class="admin-empty" style="text-align:left; padding:0 0 10px;">
+            Новым визитёрам (у кого ещё нет аккаунта) вместо мгновенного
+            входа показывается экран заявки — принять их сможет только
+            тот, у кого включено право «Заявки на закрытый бета-тест» (см.
+            вкладку «Заявки»). У кого аккаунт уже есть — их не касается,
+            заходят как обычно.
+          </div>
+          <div class="toggle-row" id="toggle-closed-beta">
+            <div class="toggle-check"></div>
+            <div class="toggle-label">Включён</div>
+          </div>
+        </div>
+
+        <!-- разовые обслуживающие инструменты — тоже безопасные, но
+             используются от случая к случаю, а не постоянно -->
+        <div class="admin-card">
+          <div class="section-label">Значки-награды</div>
+          <label class="field-label">Принудительная выдача всем игрокам</label>
+          <div style="display:flex; gap:8px; margin-bottom:6px;">
+            <select class="field-input" id="danger-badge-select" style="flex:1;"></select>
+            <button class="btn btn-line" id="btn-danger-badge-grant" style="width:auto; padding:0 16px; flex-shrink:0;">Выдать всем</button>
+          </div>
+          <div class="admin-empty" style="text-align:left; padding:0;">
+            Выдаёт выбранный значок абсолютно всем текущим аккаунтам разом —
+            например, чтобы восстановить значок после сброса старой версии,
+            которая их стирала. Если у разных игроков раньше были разные
+            значки — точную историю (кому что выдавали) смотри в «Журнале».
+          </div>
+          <div class="admin-empty" id="danger-badge-grant-result" style="display:none; margin-top:8px; text-align:left;"></div>
+        </div>
+
+        <div class="admin-card">
+          <div class="section-label">Гостевые аккаунты</div>
+          <button class="btn btn-line" id="btn-danger-delete-guests" style="width:100%;">Удалить всех гостей</button>
+          <div class="admin-empty" style="text-align:left; padding:8px 0 0;">
+            Гости (аккаунты вида guest_...) создаются автоматически, когда
+            приложение открывают не из Telegram, и обычно сами чистятся
+            через 24 часа после создания. Эта кнопка удаляет их все прямо
+            сейчас, не дожидаясь суток.
+          </div>
+          <div class="admin-empty" id="danger-delete-guests-result" style="display:none; margin-top:8px; text-align:left;"></div>
+        </div>
+
+        <!-- необратимые/критические действия — сгруппированы отдельно,
+             визуально выделены рамкой var(--live), и требуют жёстко
+             role === 'superadmin' поверх права "danger" (см. JS) -->
+        <div class="admin-card live">
+          <div class="section-label" style="color:var(--live);">Опасная зона — сброс истории</div>
+
+          <div id="danger-reset-locked-note" style="display:none;">
+            <div class="admin-empty" style="text-align:left; padding:0; color:var(--live);">
+              Это действие доступен только Супердоступу.
+            </div>
+          </div>
+
+          <div id="danger-reset-controls">
+            <div class="admin-empty" style="text-align:left; padding:0 0 16px; color:var(--live);">
+              Необратимо удаляет всю историю боёв — matches, battles и очереди поиска
+              (queue, refereeQueue) — и обнуляет у ВСЕХ игроков очки, месячный рейтинг
+              и статистику. Аккаунты, роли, списки друзей/заявок и значки-награды
+              не трогает — значки остаются как есть, это не сезонная статистика,
+              а память о том, что игрок был в проекте. Делай это только перед
+              настоящим стартом бета-теста, когда вся текущая история — просто
+              тестовый мусор.
+            </div>
+
+            <label class="field-label">Задать новый пароль сброса (одноразовый — сработает один раз и сотрётся сам)</label>
+            <div style="display:flex; gap:8px; margin-bottom:6px;">
+              <input type="text" class="field-input" id="danger-secret-set-input" placeholder="Новый пароль" autocomplete="off" style="flex:1;">
+              <button class="btn btn-line" id="btn-danger-secret-save" style="width:auto; padding:0 16px; flex-shrink:0;">Сохранить</button>
+            </div>
+            <div class="admin-empty" id="danger-secret-save-result" style="display:none; margin-bottom:14px; text-align:left;"></div>
+
+            <label class="field-label">Пароль сброса</label>
+            <input type="password" class="field-input" id="danger-secret-input" placeholder="Пароль сброса" autocomplete="off" style="margin-bottom:10px;">
+            <button class="btn btn-live" id="btn-danger-reset" style="width:100%;">Подтвердить и сбросить всё</button>
+            <div class="admin-empty" id="danger-secret-missing" style="display:none; margin-top:10px; text-align:left; color:var(--live);">
+              config/resetSecret ещё не задан — сначала впиши пароль в поле выше
+              ("Задать новый пароль сброса") и сохрани его.
+            </div>
+
+            <div class="admin-empty" id="danger-reset-result" style="display:none; margin-top:14px;"></div>
+          </div>
+        </div>
+
+        <div class="admin-card live">
+          <div class="section-label" style="color:var(--live);">Аварийный режим</div>
+
+          <div id="danger-emergency-locked-note" style="display:none;">
+            <div class="admin-empty" style="text-align:left; padding:0; color:var(--live);">
+              Это действие доступен только Супердоступу.
+            </div>
+          </div>
+
+          <div id="danger-emergency-controls">
+            <div class="admin-empty" style="text-align:left; padding:0 0 10px; color:var(--live);">
+              Полностью закрывает и основной сайт, и эту панель — для ВСЕХ,
+              включая Админов и Модераторов. Доступ сохранится только у
+              Супердоступа. Включай только при реальном инциденте (взлом,
+              утечка данных, критический баг) — не для обычных обновлений,
+              для них есть режим обслуживания выше.
+            </div>
+            <div class="toggle-row" id="toggle-emergency">
+              <div class="toggle-check"></div>
+              <div class="toggle-label">Включён</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
   </div>
 
 </div>
@@ -610,6 +996,8 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<!-- только для "Восстановление" (код) — распаковка zip-снимка battle-data-admin-bot в браузере -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
   // ===== та же Firebase-база, что и у основного сайта БАТТЛ =====
   // Этот apiKey — публичный клиентский ключ веб-конфига Firebase, не секрет;
@@ -683,10 +1071,16 @@
     { id: 'clans', label: 'Модерация кланов и ссылок на чаты' },
     { id: 'stats', label: 'Ивент-баннер и статистика игрока' },
     { id: 'badges', label: 'Значки-награды' },
-    { id: 'beta', label: 'Заявки на закрытый бета-тест' }
+    { id: 'beta', label: 'Заявки на закрытый бета-тест' },
+    // "Система" — вкладка видна с этим правом, но два самых критичных
+    // пункта внутри (полный сброс, аварийный режим) всё равно требуют
+    // живой проверки role === 'superadmin' поверх этого права (см.
+    // openDangerZone/canManageDanger) — делегируется только безопасная
+    // часть (обслуживание/закрытый бета-тест/значки/гости)
+    { id: 'danger', label: 'Система (обслуживание, сброс)' }
   ];
-  const ALL_PERMISSIONS_OFF = { bans: false, clans: false, stats: false, badges: false, beta: false };
-  const ALL_PERMISSIONS_ON = { bans: true, clans: true, stats: true, badges: true, beta: true };
+  const ALL_PERMISSIONS_OFF = { bans: false, clans: false, stats: false, badges: false, beta: false, danger: false };
+  const ALL_PERMISSIONS_ON = { bans: true, clans: true, stats: true, badges: true, beta: true, danger: true };
   function resolvePermissions(user) {
     if (!user) return { ...ALL_PERMISSIONS_OFF };
     if (user.role === 'superadmin') return { ...ALL_PERMISSIONS_ON }; // супердоступ — всегда всё, это не настраивается
@@ -749,6 +1143,13 @@
           loadUserList(false);
           loadBadgeDefs();
           renderAccountTab(user);
+          // "Бэкапы"/"Восстановление" — только superadmin (см. canManageRoles),
+          // не тратим лишний запрос к GitHub API на роли, которым вкладки
+          // всё равно скрыты в applyRoleUI
+          if (canManageRoles()) {
+            loadAllBackupLists().catch((err) => console.error('Бэкапы: первичная загрузка', err));
+            attachTokenChangeRequestsListener(myTelegramId);
+          }
         }
 
         // защита от угона доступа — см. комментарий у #screen-device-locked.
@@ -899,6 +1300,9 @@
       if (tab.dataset.tab === 'clans') loadClansAdminPanel();
       if (tab.dataset.tab === 'beta') loadBetaApplicationsPanel();
       if (tab.dataset.tab === 'database') loadDatabaseTree();
+      if (tab.dataset.tab === 'stats') loadStatsTab();
+      if (tab.dataset.tab === 'backups' || tab.dataset.tab === 'restore') loadAllBackupLists();
+      if (tab.dataset.tab === 'danger') openDangerZone();
       if (tab.dataset.tab === 'account') db.ref('users/' + myTelegramId).once('value').then((s) => renderAccountTab(s.val() || {}));
     });
   });
@@ -991,6 +1395,13 @@
   function canManageClans() { return myPermissions.clans; }
   function canManageBans() { return myPermissions.bans; }
   function canManageBeta() { return myPermissions.beta; }
+  // "Система" видна с этим правом (myPermissions уже даёт его автоматически
+  // superadmin — см. resolvePermissions/ALL_PERMISSIONS_ON), но сброс и
+  // аварийный режим внутри вкладки дополнительно требуют живого
+  // role === 'superadmin' на каждое открытие (см. openDangerZone) — этот
+  // геттер только про видимость самой вкладки, не про право жать эти
+  // две конкретные кнопки.
+  function canManageDanger() { return myPermissions.danger; }
   // выдача ролей/прав — самое чувствительное действие в панели (может
   // выдать superadmin или любое право кому угодно, включая себя), поэтому
   // только Супердоступ, без исключений и без отдельного переключателя. См.
@@ -1179,6 +1590,19 @@
     // с почтами игроков) — только superadmin, без промежуточных прав
     const databaseTab = document.querySelector('.tab[data-tab="database"]');
     if (databaseTab) databaseTab.style.display = canManageRoles() ? '' : 'none';
+    // "Бэкапы"/"Восстановление" — как и "База", не делегируется, только
+    // superadmin (см. CLAUDE.md этого репозитория и battle-data-admin-bot).
+    const backupsTab = document.querySelector('.tab[data-tab="backups"]');
+    if (backupsTab) backupsTab.style.display = canManageRoles() ? '' : 'none';
+    const restoreTab = document.querySelector('.tab[data-tab="restore"]');
+    if (restoreTab) restoreTab.style.display = canManageRoles() ? '' : 'none';
+    // "Система" — делегируемое право (canManageDanger), см. комментарий
+    // там же и у PERMISSION_DEFS.
+    const dangerTab = document.querySelector('.tab[data-tab="danger"]');
+    if (dangerTab) dangerTab.style.display = canManageDanger() ? '' : 'none';
+    // "Статистика" — отчёт "только для чтения", виден всем, у кого вообще
+    // есть доступ к панели (moderator/admin/superadmin), без отдельного
+    // переключаемого права — намеренно не трогаем её display здесь.
   }
 
   // ===== "Аккаунт" — вход в панель с других устройств/браузеров =====
@@ -2180,6 +2604,883 @@
         console.error('База: корневой список', err);
       });
   }
+
+  // ===== "Статистика" — портировано из battle-data-admin-bot. Всё
+  // считается на клиенте из once('value') на users/battles/matches/clans/
+  // events; там, где точного поля в схеме нет, это явно помечено в
+  // подписи/hint, а не выдаётся за точное число. =====
+  function statTile(value, label) {
+    return `<div class="stat-tile"><div class="st-val">${escapeHtml(String(value))}</div><div class="st-label">${escapeHtml(label)}</div></div>`;
+  }
+  function barRow(label, count, max) {
+    const pct = max > 0 ? Math.max(2, Math.round((count / max) * 100)) : 0;
+    return `<div class="bar-row"><span class="bar-label">${escapeHtml(label)}</span><span class="bar-track"><span class="bar-fill" style="width:${pct}%"></span></span><span class="bar-count">${count}</span></div>`;
+  }
+
+  const STAT_LEAGUES = [
+    { name: 'Сын шлюхи', minPoints: 0 },
+    { name: 'Говно из-под коня', minPoints: 500 },
+    { name: 'Отброс общества', minPoints: 1500 },
+    { name: 'Шавка подзаборная', minPoints: 3000 },
+    { name: 'Уважаемый тролль', minPoints: 6000 },
+    { name: 'Батя троллей', minPoints: 10000 },
+    { name: 'Рабовладелец', minPoints: 15000 }
+  ];
+  function leagueOf(points) {
+    let result = STAT_LEAGUES[0];
+    for (const l of STAT_LEAGUES) { if ((points || 0) >= l.minPoints) result = l; }
+    return result.name;
+  }
+
+  function isStatsEventLive(ev) {
+    if (!ev) return false;
+    const now = Date.now();
+    if (ev.startsAt && now < ev.startsAt) return false;
+    if (ev.endsAt && now > ev.endsAt) return false;
+    return !!ev.active || !!ev.startsAt || !!ev.endsAt;
+  }
+
+  function loadStatsTab() {
+    const loadingEl = document.getElementById('stats-loading');
+    const contentEl = document.getElementById('stats-content');
+    loadingEl.style.display = 'block';
+    loadingEl.textContent = 'Считаем показатели…';
+    contentEl.style.display = 'none';
+
+    Promise.all([
+      db.ref('users').once('value'),
+      db.ref('presence').once('value'),
+      db.ref('battles').once('value'),
+      db.ref('matches').once('value'),
+      db.ref('clans').once('value'),
+      db.ref('events').once('value')
+    ]).then(([usersSnap, presenceSnap, battlesSnap, matchesSnap, clansSnap, eventsSnap]) => {
+      const users = usersSnap.val() || {};
+      const presence = presenceSnap.val() || {};
+      const battles = battlesSnap.val() || {};
+      const matches = matchesSnap.val() || {};
+      const clans = clansSnap.val() || {};
+      const events = eventsSnap.val() || {};
+      renderStatsTab({ users, presence, battles, matches, clans, events });
+      loadingEl.style.display = 'none';
+      contentEl.style.display = 'block';
+    }).catch((err) => {
+      console.error('Статистика: загрузка', err);
+      loadingEl.textContent = 'Не удалось загрузить данные для статистики: ' + (err.message || err);
+    });
+  }
+
+  function renderStatsTab({ users, presence, battles, matches, clans, events }) {
+    const userEntries = Object.entries(users);
+    const total = userEntries.length;
+    const guestKeys = userEntries.filter(([k]) => k.startsWith('guest_'));
+    const tgAccounts = total - guestKeys.length;
+    const onlineNow = Object.keys(presence).length;
+    const now = Date.now();
+    const DAY = 24 * 3600 * 1000;
+    const createdLast24h = userEntries.filter(([, u]) => (now - (u.createdAt || 0)) < DAY).length;
+    const createdLast7d = userEntries.filter(([, u]) => (now - (u.createdAt || 0)) < 7 * DAY).length;
+
+    document.getElementById('stats-players-grid').innerHTML = [
+      statTile(total.toLocaleString('ru-RU'), 'Всего аккаунтов'),
+      statTile(tgAccounts.toLocaleString('ru-RU'), 'Telegram-аккаунты'),
+      statTile(guestKeys.length.toLocaleString('ru-RU'), 'Гостевые'),
+      statTile(onlineNow.toLocaleString('ru-RU'), 'Онлайн прямо сейчас'),
+      statTile(createdLast24h.toLocaleString('ru-RU'), 'Новых за 24ч (по createdAt)'),
+      statTile(createdLast7d.toLocaleString('ru-RU'), 'Новых за 7д (по createdAt)')
+    ].join('');
+
+    // роли
+    const roleCounts = {};
+    userEntries.forEach(([, u]) => { const r = u.role || 'user'; roleCounts[r] = (roleCounts[r] || 0) + 1; });
+    const maxRole = Math.max(1, ...Object.values(roleCounts));
+    document.getElementById('stats-roles-bars').innerHTML = Object.entries(roleCounts)
+      .sort((a, b) => b[1] - a[1]).map(([role, count]) => barRow(ROLE_LABELS[role] || role, count, maxRole)).join('') || '<div class="admin-empty">Нет данных</div>';
+
+    // лиги
+    const leagueCounts = {};
+    STAT_LEAGUES.forEach((l) => { leagueCounts[l.name] = 0; });
+    userEntries.forEach(([, u]) => { const name = leagueOf(u.points); leagueCounts[name] = (leagueCounts[name] || 0) + 1; });
+    const maxLeague = Math.max(1, ...Object.values(leagueCounts));
+    document.getElementById('stats-leagues-bars').innerHTML = STAT_LEAGUES.map((l) => barRow(l.name, leagueCounts[l.name] || 0, maxLeague)).join('');
+
+    // бои
+    const battleEntries = Object.entries(battles);
+    const matchEntries = Object.entries(matches);
+    const allBattleLike = [...battleEntries, ...matchEntries];
+    const tsOf = (b) => b.createdAt || b.startedAt || b.timestamp || 0;
+    const battlesToday = allBattleLike.filter(([, b]) => (now - tsOf(b)) < DAY).length;
+    const battlesWeek = allBattleLike.filter(([, b]) => (now - tsOf(b)) < 7 * DAY).length;
+    document.getElementById('stats-battles-grid').innerHTML = [
+      statTile(battleEntries.length.toLocaleString('ru-RU'), 'Активных/сохранённых battles'),
+      statTile(matchEntries.length.toLocaleString('ru-RU'), 'Записей matches'),
+      statTile(battlesToday.toLocaleString('ru-RU'), 'За сегодня (по метке времени)'),
+      statTile(battlesWeek.toLocaleString('ru-RU'), 'За 7 дней (по метке времени)')
+    ].join('');
+    document.getElementById('stats-battles-hint').textContent =
+      'battles хранит только активные/недавно завершённые бои (не архив истории целиком) — «всего» тут не значит «за всё время проекта». Средняя длительность не показана: явных полей начала/конца боя, пригодных для расчёта, в найденных записях нет.';
+
+    // топ игроков — точный ник виден любому с доступом к панели (он и так
+    // находится за секунду через "Найти игрока" на вкладке "Панель")
+    const topPlayers = userEntries
+      .filter(([k]) => !k.startsWith('guest_'))
+      .sort((a, b) => (b[1].points || 0) - (a[1].points || 0))
+      .slice(0, 10);
+    document.getElementById('stats-top-players').innerHTML = topPlayers.length
+      ? topPlayers.map(([, u], i) => `<div class="list-row"><span>${i + 1}. ${escapeHtml(u.firstName || 'Без имени')}</span><span class="meta">${(u.points ?? 0).toLocaleString('ru-RU')} 🏆</span></div>`).join('')
+      : '<div class="admin-empty">Нет данных</div>';
+
+    // экономика
+    let starsTotal = 0, framesTotal = 0, ticketsTotal = 0;
+    userEntries.forEach(([, u]) => {
+      starsTotal += Number(u.starsBalance || 0);
+      framesTotal += Object.keys(u.ownedFrames || {}).length;
+      ticketsTotal += Object.keys(u.multiplierTickets || {}).length;
+    });
+    document.getElementById('stats-economy-grid').innerHTML = [
+      statTile(starsTotal.toLocaleString('ru-RU'), 'Stars в обороте (сумма starsBalance)'),
+      statTile((total ? Math.round(starsTotal / total) : 0).toLocaleString('ru-RU'), 'Stars в среднем на аккаунт'),
+      statTile(framesTotal.toLocaleString('ru-RU'), 'Купленных/полученных рамок (ownedFrames)'),
+      statTile(ticketsTotal.toLocaleString('ru-RU'), 'Неиспользованных билетов-множителей')
+    ].join('');
+
+    // кланы
+    const clanEntries = Object.entries(clans);
+    const approvedClans = clanEntries.filter(([, c]) => (c.status || 'approved') === 'approved');
+    const pendingClans = clanEntries.filter(([, c]) => (c.status || 'approved') === 'pending');
+    const memberCounts = approvedClans.map(([, c]) => Object.keys(c.members || {}).length);
+    const totalClanMembers = memberCounts.reduce((a, b) => a + b, 0);
+    document.getElementById('stats-clans-grid').innerHTML = [
+      statTile(approvedClans.length.toLocaleString('ru-RU'), 'Одобренных кланов'),
+      statTile(pendingClans.length.toLocaleString('ru-RU'), 'На рассмотрении'),
+      statTile(totalClanMembers.toLocaleString('ru-RU'), 'Всего участников в кланах'),
+      statTile(memberCounts.length ? (totalClanMembers / memberCounts.length).toFixed(1) : '0', 'Среднее число участников')
+    ].join('');
+    const topClans = approvedClans
+      .map(([code, c]) => [code, c, Object.keys(c.members || {}).length])
+      .sort((a, b) => b[2] - a[2]).slice(0, 10);
+    document.getElementById('stats-clans-top').innerHTML = topClans.length
+      ? topClans.map(([code, c, count]) => `<div class="list-row"><span>${escapeHtml(c.emoji || '🛡')} ${escapeHtml(c.name || code)}</span><span class="meta">${count} уч.</span></div>`).join('')
+      : '<div class="admin-empty">Нет одобренных кланов</div>';
+
+    // ивенты
+    const eventEntries = Object.entries(events);
+    document.getElementById('stats-events-list').innerHTML = eventEntries.length ? eventEntries.map(([id, ev]) => {
+      const live = isStatsEventLive(ev);
+      let participants = 0;
+      if (ev.badgeId) participants = userEntries.filter(([, u]) => u.badges && u.badges[ev.badgeId]).length;
+      const ticketHolders = userEntries.filter(([, u]) => Object.values(u.multiplierTickets || {}).some((t) => t && t.value === ev.multiplier)).length;
+      const approxParticipants = Math.max(participants, ev.multiplier ? ticketHolders : 0);
+      return `<div class="list-row"><span>${live ? '🟢' : '⚪'} ${escapeHtml(ev.title || 'Без названия')}</span><span class="meta">≈${approxParticipants} участв.</span></div>`;
+    }).join('') : '<div class="admin-empty">Ивентов пока нет</div>';
+  }
+
+  // ===== "Бэкапы"/"Восстановление" — портировано из battle-data-admin-bot.
+  // battle-data-admin-bot становится ПРИВАТНЫМ репозиторием — в отличие от
+  // источника, здесь и листинг снимков, и их скачивание идут через Contents
+  // API с Bearer-токеном (ghApiRaw ниже), а не анонимный
+  // raw.githubusercontent.com / неавторизованный contents-запрос. Токен —
+  // тот же пасted PAT из поля выше, хранится только в localStorage этого
+  // браузера, никогда не уходит никуда, кроме api.github.com. =====
+  const GH_OWNER = 'botsystemtioxsit';
+  const GH_DATA_REPO = 'battle-data-admin-bot';
+
+  const tokenInput = document.getElementById('gh-token-input');
+  const tokenSaveBtn = document.getElementById('gh-token-save-btn');
+  const tokenLockBtn = document.getElementById('gh-token-lock-btn');
+  const tokenSaveConfirm = document.getElementById('gh-token-save-confirm');
+  const tokenLockedLine = document.getElementById('gh-token-locked-line');
+  const tokenChangeBtn = document.getElementById('gh-token-change-btn');
+  const tokenStatusEl = document.getElementById('gh-token-status');
+
+  tokenInput.value = window.localStorage.getItem('battleDataGithubToken') || '';
+
+  function saveGithubToken() {
+    window.localStorage.setItem('battleDataGithubToken', tokenInput.value.trim());
+    tokenSaveConfirm.classList.add('show');
+    clearTimeout(saveGithubToken._t);
+    saveGithubToken._t = setTimeout(() => tokenSaveConfirm.classList.remove('show'), 2000);
+  }
+  tokenInput.addEventListener('input', saveGithubToken);
+  tokenInput.addEventListener('change', saveGithubToken);
+  tokenSaveBtn.addEventListener('click', saveGithubToken);
+
+  function getGithubToken() { return tokenInput.value.trim(); }
+
+  function isTokenLocked() { return window.localStorage.getItem('battleDataTokenLocked') === 'true'; }
+
+  function renderTokenLockUI() {
+    if (isTokenLocked()) {
+      tokenInput.disabled = true;
+      tokenInput.setAttribute('readonly', 'readonly');
+      tokenSaveBtn.style.display = 'none';
+      tokenLockBtn.style.display = 'none';
+      tokenLockedLine.style.display = 'flex';
+    } else {
+      tokenInput.disabled = false;
+      tokenInput.removeAttribute('readonly');
+      tokenSaveBtn.style.display = '';
+      tokenLockBtn.style.display = '';
+      tokenLockedLine.style.display = 'none';
+      tokenLockBtn.disabled = !tokenInput.value.trim();
+    }
+  }
+  tokenInput.addEventListener('input', () => { if (!isTokenLocked()) tokenLockBtn.disabled = !tokenInput.value.trim(); });
+
+  tokenLockBtn.addEventListener('click', () => {
+    if (!tokenInput.value.trim()) return;
+    window.localStorage.setItem('battleDataTokenLocked', 'true');
+    renderTokenLockUI();
+    tokenStatusEl.style.color = 'var(--gold)';
+    tokenStatusEl.textContent = 'Токен закреплён.';
+  });
+
+  // изменить закреплённый токен можно только после подтверждения из-под
+  // настоящего Telegram-сеанса — та же RTDB-заявка/одобрение, что и вход
+  // с другого устройства (см. "Аккаунт"), только своё дерево запросов
+  // (users/<uid>/tokenChangeRequests), чтобы не путать с loginRequests.
+  let tokenChangeReqPath = null;
+  let tokenChangeReqCb = null;
+  let tokenChangeReqTimeout = null;
+  function stopWaitingForTokenChangeApproval() {
+    if (tokenChangeReqPath && tokenChangeReqCb) db.ref(tokenChangeReqPath).off('value', tokenChangeReqCb);
+    if (tokenChangeReqTimeout) clearTimeout(tokenChangeReqTimeout);
+    tokenChangeReqPath = null;
+    tokenChangeReqCb = null;
+    tokenChangeReqTimeout = null;
+  }
+
+  tokenChangeBtn.addEventListener('click', () => {
+    if (!myTelegramId) {
+      tokenStatusEl.style.color = 'var(--live)';
+      tokenStatusEl.textContent = 'Не удалось определить аккаунт.';
+      return;
+    }
+    stopWaitingForTokenChangeApproval();
+    const reqRef = db.ref('users/' + myTelegramId + '/tokenChangeRequests').push();
+    const reqPath = 'users/' + myTelegramId + '/tokenChangeRequests/' + reqRef.key;
+    reqRef.set({ device: navigator.userAgent, requestedAt: Date.now(), status: 'pending' });
+    tokenChangeBtn.disabled = true;
+    tokenStatusEl.style.color = 'var(--gold)';
+    tokenStatusEl.textContent = 'Запрос отправлен. Открой эту же панель в Telegram, чтобы подтвердить.';
+    tokenChangeReqPath = reqPath;
+    tokenChangeReqCb = db.ref(reqPath).on('value', (snap) => {
+      const val = snap.val();
+      if (!val || val.status === 'pending') return;
+      if (val.status === 'approved') {
+        db.ref(reqPath).remove();
+        window.localStorage.removeItem('battleDataTokenLocked');
+        stopWaitingForTokenChangeApproval();
+        renderTokenLockUI();
+        tokenChangeBtn.disabled = false;
+        tokenStatusEl.style.color = 'var(--gold)';
+        tokenStatusEl.textContent = 'Подтверждено — теперь можно изменить токен.';
+      } else if (val.status === 'denied') {
+        db.ref(reqPath).remove();
+        stopWaitingForTokenChangeApproval();
+        tokenChangeBtn.disabled = false;
+        tokenStatusEl.style.color = 'var(--live)';
+        tokenStatusEl.textContent = 'Запрос отклонён.';
+      }
+    });
+    tokenChangeReqTimeout = setTimeout(() => {
+      db.ref(reqPath).once('value').then((s) => { if (s.val()?.status === 'pending') db.ref(reqPath).remove(); });
+      stopWaitingForTokenChangeApproval();
+      tokenChangeBtn.disabled = false;
+      tokenStatusEl.style.color = 'var(--live)';
+      tokenStatusEl.textContent = 'Время ожидания истекло, попробуй снова.';
+    }, 5 * 60 * 1000);
+  });
+
+  let tokenRequestsListenerRef = null;
+  let tokenRequestsListenerCb = null;
+  function attachTokenChangeRequestsListener(telegramId) {
+    if (!tgUser) return;
+    if (tokenRequestsListenerRef && tokenRequestsListenerCb) {
+      tokenRequestsListenerRef.off('value', tokenRequestsListenerCb);
+    }
+    tokenRequestsListenerRef = db.ref('users/' + telegramId + '/tokenChangeRequests');
+    tokenRequestsListenerCb = tokenRequestsListenerRef.on('value', (snap) => {
+      renderTokenChangeRequests(snap.val() || {});
+    });
+  }
+
+  function renderTokenChangeRequests(requests) {
+    const card = document.getElementById('gh-token-requests-card');
+    const list = document.getElementById('gh-token-requests-list');
+    const entries = Object.entries(requests).filter(([, r]) => r && r.status === 'pending');
+    if (!entries.length) { card.style.display = 'none'; list.innerHTML = ''; return; }
+    card.style.display = 'block';
+    list.innerHTML = entries.map(([id, r]) => `
+      <div class="list-row">
+        <span>${escapeHtml(r.device || 'Неизвестное устройство')}<br><span class="meta">${new Date(r.requestedAt || 0).toLocaleString('ru-RU')}</span></span>
+        <span class="row" style="margin:0;">
+          <button class="btn btn-gold" data-action="approve" data-id="${id}">Разрешить</button>
+          <button class="btn btn-live" data-action="deny" data-id="${id}">Отклонить</button>
+        </span>
+      </div>
+    `).join('');
+    list.querySelectorAll('button[data-action]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        const status = btn.dataset.action === 'approve' ? 'approved' : 'denied';
+        db.ref('users/' + myTelegramId + '/tokenChangeRequests/' + id + '/status').set(status);
+      });
+    });
+  }
+
+  renderTokenLockUI();
+
+  // все GitHub API вызовы (кроме листинга/скачивания снимков — см.
+  // ghFetchRaw ниже) идут через этот общий helper, авторизованный
+  // Bearer-токеном
+  async function ghApi(path, token, options = {}) {
+    const res = await fetch(`https://api.github.com${path}`, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        ...(options.headers || {}),
+      },
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`${path} -> ${res.status}: ${body}`);
+    }
+    return res.status === 204 ? null : res.json();
+  }
+
+  // battle-data-admin-bot теперь ПРИВАТНЫЙ репозиторий — в отличие от
+  // источника (battle-data-admin-bot был публичным), листинг снимков
+  // требует авторизованного запроса к Contents API, анонимный
+  // GET .../contents/<path> вернёт 404 для чужого приватного репозитория.
+  async function listBackups(path, token) {
+    const res = await fetch(`https://api.github.com/repos/${GH_OWNER}/${GH_DATA_REPO}/contents/${path}?ref=main`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
+    });
+    if (res.status === 404) return [];
+    if (!res.ok) throw new Error('GitHub API: ' + res.status);
+    const items = await res.json();
+    return items
+      .filter((i) => i.type === 'file')
+      .map((i) => ({ name: i.name, size: i.size }))
+      .sort((a, b) => b.name.localeCompare(a.name));
+  }
+
+  // скачивание содержимого снимка из приватного battle-data-admin-bot:
+  // raw.githubusercontent.com не отдаёт файлы приватного репозитория без
+  // отдельного механизма подписи ссылок, поэтому вместо него — тот же
+  // Contents API с Accept: application/vnd.github.raw+json и Bearer-токеном,
+  // он отдаёт сырое содержимое файла напрямую в теле ответа.
+  async function ghFetchRawFile(path, token) {
+    const res = await fetch(`https://api.github.com/repos/${GH_OWNER}/${GH_DATA_REPO}/contents/${path}?ref=main`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github.raw+json' },
+    });
+    if (!res.ok) throw new Error(`Не удалось скачать ${path}: ${res.status}`);
+    return res;
+  }
+
+  function formatBackupSize(bytes) {
+    if (bytes > 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' МБ';
+    if (bytes > 1024) return (bytes / 1024).toFixed(0) + ' КБ';
+    return bytes + ' Б';
+  }
+
+  // без токена список снимков (а значит и восстановление) просто не
+  // построить — приватный репозиторий не отдаёт даже листинг анонимно.
+  function renderBackupList(el, items, hint) {
+    if (!items) { el.innerHTML = `<div class="admin-empty" style="text-align:left; padding:0;">${escapeHtml(hint)}</div>`; return; }
+    if (!items.length) { el.innerHTML = '<div class="admin-empty" style="text-align:left; padding:0;">Снимков пока нет.</div>'; return; }
+    el.innerHTML = items.map((i) => `
+      <div class="list-row">
+        <span>${escapeHtml(i.name.replace(/\.(zip|json)$/, ''))}</span>
+        <span class="meta">${formatBackupSize(i.size)}</span>
+      </div>
+    `).join('');
+  }
+
+  function fillBackupSelect(selectEl, items, placeholder) {
+    selectEl.innerHTML = `<option value="">${placeholder}</option>` +
+      (items || []).map((i) => `<option value="${i.name.replace(/\.(zip|json)$/, '')}">${i.name}</option>`).join('');
+  }
+
+  let codeBackupsCache = { 'index.html': [], 'battle-admin-bot': [] };
+  let backupListsLoadedForToken = null;
+
+  async function loadAllBackupLists() {
+    if (!canManageRoles()) return; // на случай подделки клика мимо скрытой вкладки
+    const token = getGithubToken();
+    const listIndexEl = document.getElementById('list-code-index');
+    const listAdminEl = document.getElementById('list-code-admin');
+    const listDbEl = document.getElementById('list-db');
+    if (!token) {
+      const hint = 'Впиши и сохрани GitHub-токен выше — без него список снимков не загрузить (battle-data-admin-bot приватный).';
+      renderBackupList(listIndexEl, null, hint);
+      renderBackupList(listAdminEl, null, hint);
+      renderBackupList(listDbEl, null, hint);
+      return;
+    }
+    if (backupListsLoadedForToken === token) return; // не перезапрашиваем на каждый повторный заход на вкладку с тем же токеном
+    try {
+      const [codeIndex, codeAdmin, dbList] = await Promise.all([
+        listBackups('code-backups/index.html', token),
+        listBackups('code-backups/battle-admin-bot', token),
+        listBackups('db-snapshots', token),
+      ]);
+      codeBackupsCache['index.html'] = codeIndex;
+      codeBackupsCache['battle-admin-bot'] = codeAdmin;
+      backupListsLoadedForToken = token;
+
+      renderBackupList(listIndexEl, codeIndex);
+      renderBackupList(listAdminEl, codeAdmin);
+      renderBackupList(listDbEl, dbList);
+
+      fillBackupSelect(document.getElementById('restore-db-select'), dbList, 'Выбери дату снимка');
+      updateRestoreCodeSelect();
+    } catch (err) {
+      console.error('Бэкапы: список', err);
+      const errHint = 'Не удалось загрузить список: ' + (err.message || err);
+      renderBackupList(listIndexEl, null, errHint);
+      renderBackupList(listAdminEl, null, errHint);
+      renderBackupList(listDbEl, null, errHint);
+    }
+  }
+
+  function updateRestoreCodeSelect() {
+    const repo = document.getElementById('restore-code-repo').value;
+    fillBackupSelect(document.getElementById('restore-code-select'), codeBackupsCache[repo] || [], 'Выбери дату снимка');
+  }
+  document.getElementById('restore-code-repo').addEventListener('change', updateRestoreCodeSelect);
+
+  document.getElementById('backup-now-btn').addEventListener('click', async () => {
+    if (!canManageRoles()) return; // на случай подделки клика мимо скрытой вкладки
+    const btn = document.getElementById('backup-now-btn');
+    const statusEl = document.getElementById('backup-now-status');
+    const token = getGithubToken();
+    if (!token) { statusEl.style.color = 'var(--live)'; statusEl.textContent = 'Сначала впиши GitHub-токен выше.'; return; }
+    btn.disabled = true; btn.textContent = 'Запускаем…';
+    statusEl.style.color = 'var(--muted)'; statusEl.textContent = '';
+    try {
+      await Promise.all(['code-backup.yml', 'db-snapshot.yml'].map((workflow) =>
+        ghApi(`/repos/${GH_OWNER}/${GH_DATA_REPO}/actions/workflows/${workflow}/dispatches`, token, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ref: 'main' }),
+        })
+      ));
+      statusEl.style.color = 'var(--gold)';
+      statusEl.textContent = 'Запущено — новые снимки появятся в списках через 1–2 минуты.';
+    } catch (err) {
+      statusEl.style.color = 'var(--live)';
+      statusEl.textContent = 'Ошибка: ' + (err.message || err);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Сделать бэкап сейчас';
+    }
+  });
+
+  document.getElementById('restore-db-btn').addEventListener('click', async () => {
+    if (!canManageRoles()) return; // на случай подделки клика мимо скрытой вкладки
+    const btn = document.getElementById('restore-db-btn');
+    const statusEl = document.getElementById('restore-db-status');
+    const date = document.getElementById('restore-db-select').value;
+    const confirmText = document.getElementById('restore-db-confirm').value.trim();
+    const token = getGithubToken();
+    if (!token) { statusEl.style.color = 'var(--live)'; statusEl.textContent = 'Сначала впиши GitHub-токен выше (нужен, чтобы скачать снимок из приватного репозитория).'; return; }
+    if (!date) { statusEl.style.color = 'var(--live)'; statusEl.textContent = 'Выбери снимок.'; return; }
+    if (confirmText !== 'ВОССТАНОВИТЬ') { statusEl.style.color = 'var(--live)'; statusEl.textContent = 'Впиши слово ВОССТАНОВИТЬ для подтверждения.'; return; }
+    btn.disabled = true; btn.textContent = 'Восстанавливаем…';
+    statusEl.style.color = 'var(--muted)'; statusEl.textContent = 'Скачиваем снимок…';
+    try {
+      const res = await ghFetchRawFile(`db-snapshots/${date}.json`, token);
+      const data = await res.json();
+      statusEl.textContent = 'Записываем в базу…';
+      await db.ref('/').set(data);
+      statusEl.style.color = 'var(--gold)';
+      statusEl.textContent = `База восстановлена до состояния на ${date}.`;
+      document.getElementById('restore-db-confirm').value = '';
+    } catch (err) {
+      statusEl.style.color = 'var(--live)';
+      statusEl.textContent = 'Ошибка: ' + (err.message || err);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Восстановить базу';
+    }
+  });
+
+  document.getElementById('restore-code-btn').addEventListener('click', async () => {
+    if (!canManageRoles()) return; // на случай подделки клика мимо скрытой вкладки
+    const btn = document.getElementById('restore-code-btn');
+    const statusEl = document.getElementById('restore-code-status');
+    const repo = document.getElementById('restore-code-repo').value;
+    const date = document.getElementById('restore-code-select').value;
+    const confirmText = document.getElementById('restore-code-confirm').value.trim();
+    const token = getGithubToken();
+    if (!token) { statusEl.style.color = 'var(--live)'; statusEl.textContent = 'Сначала впиши GitHub-токен.'; return; }
+    if (!date) { statusEl.style.color = 'var(--live)'; statusEl.textContent = 'Выбери снимок.'; return; }
+    if (confirmText !== 'ВОССТАНОВИТЬ') { statusEl.style.color = 'var(--live)'; statusEl.textContent = 'Впиши слово ВОССТАНОВИТЬ для подтверждения.'; return; }
+    btn.disabled = true; btn.textContent = 'Восстанавливаем…';
+    statusEl.style.color = 'var(--muted)'; statusEl.textContent = '';
+    try {
+      // сам архив кода лежит в battle-data-admin-bot (приватный) — скачиваем
+      // его через тот же авторизованный Contents API, что и снимки БД
+      const zipRes = await ghFetchRawFile(`code-backups/${repo}/${date}.zip`, token);
+      const zipBuffer = await zipRes.arrayBuffer();
+      const zip = await JSZip.loadAsync(zipBuffer);
+      const entries = Object.values(zip.files).filter((f) => !f.dir);
+      if (!entries.length) throw new Error('Архив пуст.');
+
+      statusEl.textContent = `Загружаем файлы (0/${entries.length})…`;
+      // а сам целевой репозиторий (index.html / battle-admin-bot) остаётся
+      // публичным — пишем в него как и раньше через Git Data API
+      const refData = await ghApi(`/repos/${GH_OWNER}/${repo}/git/ref/heads/main`, token);
+      const latestCommitSha = refData.object.sha;
+
+      const tree = [];
+      let done = 0;
+      for (const entry of entries) {
+        const base64 = await entry.async('base64');
+        const blob = await ghApi(`/repos/${GH_OWNER}/${repo}/git/blobs`, token, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: base64, encoding: 'base64' }),
+        });
+        tree.push({ path: entry.name, mode: '100644', type: 'blob', sha: blob.sha });
+        done += 1;
+        statusEl.textContent = `Загружаем файлы (${done}/${entries.length})…`;
+      }
+
+      statusEl.textContent = 'Собираем коммит…';
+      const newTree = await ghApi(`/repos/${GH_OWNER}/${repo}/git/trees`, token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tree }),
+      });
+      const newCommit = await ghApi(`/repos/${GH_OWNER}/${repo}/git/commits`, token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `Восстановление из бэкапа battle-data-admin-bot за ${date}`,
+          tree: newTree.sha,
+          parents: [latestCommitSha],
+        }),
+      });
+      await ghApi(`/repos/${GH_OWNER}/${repo}/git/refs/heads/main`, token, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sha: newCommit.sha, force: false }),
+      });
+
+      statusEl.style.color = 'var(--gold)';
+      statusEl.textContent = `Репозиторий ${repo} восстановлен до состояния на ${date}.`;
+      document.getElementById('restore-code-confirm').value = '';
+    } catch (err) {
+      statusEl.style.color = 'var(--live)';
+      statusEl.textContent = 'Ошибка: ' + (err.message || err);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Восстановить код';
+    }
+  });
+
+  // ===== "Система" — она же опасная зона: полный сброс перед
+  // бета-тестом, обслуживание, закрытый бета-тест, аварийный режим.
+  //
+  // Вкладку видят все, у кого вообще есть доступ к панели (moderator/admin/
+  // superadmin) — а воспользоваться безопасной частью (обслуживание/
+  // закрытый бета-тест/значки/гости) может любой, у кого включено
+  // делегируемое право "danger" (canManageDanger). Полный сброс и
+  // аварийный режим — исключение: они ЖЁСТКО требуют role === 'superadmin'
+  // поверх этого права, без исключений и без отдельного переключателя,
+  // ровно как и было до появления "danger" (см. guard на кнопках ниже).
+  //
+  // Право/роль проверяются заново живым запросом к базе КАЖДЫЙ РАЗ при
+  // открытии вкладки (а не один раз при входе в панель, как myPermissions/
+  // myRole) — так право или роль, отозванные уже после открытия панели, не
+  // проигнорируем по старому кэшу.
+  //
+  // Второй барьер сброса — секретный пароль, хранится в самой базе
+  // (config/resetSecret), задаётся вручную через эту же панель или через
+  // Firebase Console. В коде страницы этого пароля нет вообще — только
+  // сравнение с тем, что реально лежит в базе на момент проверки.
+  let dangerZoneVerifiedRole = null;
+  let dangerZoneVerifiedCanManage = false;
+
+  function openDangerZone() {
+    dangerZoneVerifiedRole = null;
+    dangerZoneVerifiedCanManage = false;
+    document.getElementById('danger-checking').style.display = 'block';
+    document.getElementById('danger-denied').style.display = 'none';
+    document.getElementById('danger-allowed').style.display = 'none';
+    db.ref('users/' + myTelegramId).once('value').then((snap) => {
+      const freshUser = snap.val();
+      const freshRole = freshUser?.role || 'user';
+      const freshPermissions = resolvePermissions(freshUser);
+      dangerZoneVerifiedRole = freshRole;
+      dangerZoneVerifiedCanManage = !!freshPermissions.danger;
+      document.getElementById('danger-checking').style.display = 'none';
+      if (dangerZoneVerifiedCanManage) {
+        document.getElementById('danger-allowed').style.display = 'block';
+        resetDangerZoneForm();
+        const isSuperadmin = freshRole === 'superadmin';
+        document.getElementById('danger-reset-controls').style.display = isSuperadmin ? 'block' : 'none';
+        document.getElementById('danger-reset-locked-note').style.display = isSuperadmin ? 'none' : 'block';
+        document.getElementById('danger-emergency-controls').style.display = isSuperadmin ? 'block' : 'none';
+        document.getElementById('danger-emergency-locked-note').style.display = isSuperadmin ? 'none' : 'block';
+      } else {
+        document.getElementById('danger-denied-role').textContent = ROLE_LABELS[freshRole] || freshRole;
+        document.getElementById('danger-denied').style.display = 'block';
+      }
+    }).catch((err) => {
+      console.error(err);
+      document.getElementById('danger-checking').style.display = 'none';
+      document.getElementById('danger-denied-role').textContent = 'не удалось проверить';
+      document.getElementById('danger-denied').style.display = 'block';
+    });
+  }
+
+  function resetDangerZoneForm() {
+    document.getElementById('danger-secret-input').value = '';
+    document.getElementById('danger-secret-set-input').value = '';
+    document.getElementById('danger-secret-save-result').style.display = 'none';
+    document.getElementById('danger-secret-missing').style.display = 'none';
+    document.getElementById('btn-danger-reset').disabled = false;
+    document.getElementById('btn-danger-reset').textContent = 'Подтвердить и сбросить всё';
+    document.getElementById('danger-reset-result').style.display = 'none';
+    document.getElementById('danger-badge-grant-result').style.display = 'none';
+    document.getElementById('danger-delete-guests-result').style.display = 'none';
+    // ждём каталог значков — та же гонка, что и в renderUserBadgesSection:
+    // если открыть вкладку быстрее, чем отработает loadBadgeDefs() при входе,
+    // список будет пуст
+    (badgeDefsReadyPromise || Promise.resolve()).then(() => {
+      const sel = document.getElementById('danger-badge-select');
+      sel.innerHTML = Object.entries(badgeDefsCache).map(([id, def]) =>
+        `<option value="${id}">${escapeHtml(def.emoji || '🏅')} ${escapeHtml(def.label || id)}</option>`
+      ).join('');
+    });
+    loadPlatformModeState();
+  }
+
+  function loadPlatformModeState() {
+    Promise.all([
+      db.ref('config/maintenanceMode').once('value'),
+      db.ref('config/maintenanceMessage').once('value'),
+      db.ref('config/emergencyLockdown').once('value'),
+      db.ref('config/closedBeta').once('value')
+    ]).then(([modeSnap, msgSnap, lockdownSnap, closedBetaSnap]) => {
+      document.getElementById('toggle-maintenance').classList.toggle('on', !!modeSnap.val());
+      document.getElementById('maintenance-message-input').value = msgSnap.val() || '';
+      document.getElementById('toggle-emergency').classList.toggle('on', !!lockdownSnap.val());
+      document.getElementById('toggle-closed-beta').classList.toggle('on', !!closedBetaSnap.val());
+    }).catch((err) => console.error('Режимы платформы: загрузка', err));
+  }
+
+  document.getElementById('btn-danger-secret-save').addEventListener('click', async () => {
+    if (dangerZoneVerifiedRole !== 'superadmin') return; // жёсткое требование superadmin, поверх права "danger" — на случай подделки клика мимо скрытого UI
+    const input = document.getElementById('danger-secret-set-input');
+    const value = input.value.trim();
+    if (!value) { input.focus(); return; }
+    const btn = document.getElementById('btn-danger-secret-save');
+    const resultEl = document.getElementById('danger-secret-save-result');
+    btn.disabled = true;
+    try {
+      await db.ref('config/resetSecret').set(value);
+      logAction('reset_secret_changed', '—', '—', '—', 'Пароль сброса задан/изменён через панель');
+      input.value = '';
+      resultEl.textContent = 'Пароль сохранён — сработает один раз, дальше вводи его в поле «Пароль сброса» ниже.';
+      resultEl.style.display = 'block';
+      document.getElementById('danger-secret-missing').style.display = 'none';
+    } catch (err) {
+      console.error(err);
+      alert('Не удалось сохранить пароль: ' + (err.message || err));
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('btn-danger-reset').addEventListener('click', async () => {
+    if (dangerZoneVerifiedRole !== 'superadmin') return; // жёсткое требование superadmin, поверх права "danger" — на случай подделки клика мимо скрытого UI
+    const enteredSecret = document.getElementById('danger-secret-input').value;
+    const btn = document.getElementById('btn-danger-reset');
+    const resultEl = document.getElementById('danger-reset-result');
+    document.getElementById('danger-secret-missing').style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = 'Проверяю пароль…';
+    resultEl.style.display = 'none';
+    try {
+      const secretSnap = await db.ref('config/resetSecret').once('value');
+      const realSecret = secretSnap.val();
+      if (!realSecret) {
+        document.getElementById('danger-secret-missing').style.display = 'block';
+        btn.textContent = 'Подтвердить и сбросить всё';
+        btn.disabled = false;
+        return;
+      }
+      if (!enteredSecret || enteredSecret !== realSecret) {
+        alert('Неверный пароль сброса.');
+        btn.textContent = 'Подтвердить и сбросить всё';
+        btn.disabled = false;
+        return;
+      }
+
+      btn.textContent = 'Сбрасываю…';
+      const usersSnap = await db.ref('users').once('value');
+      const users = usersSnap.val() || {};
+      const userKeys = Object.keys(users);
+      const update = {
+        matches: null,
+        battles: null,
+        queue: null,
+        refereeQueue: null,
+        // одноразовость пароля: успешный сброс сам стирает config/resetSecret,
+        // чтобы этим же паролем (если он где-то сохранился/подсмотрен) нельзя
+        // было запустить сброс ещё раз — для следующего нужно задать новый
+        'config/resetSecret': null
+      };
+      userKeys.forEach((key) => {
+        // 1000 — стартовый ELO (index.html: ELO_BASELINE), не 0 — иначе
+        // сброшенные аккаунты стартуют ниже, чем только что созданные
+        update['users/' + key + '/points'] = 1000;
+        update['users/' + key + '/monthlyPoints'] = 0;
+        update['users/' + key + '/monthlyPeriod'] = null;
+        update['users/' + key + '/starsBalance'] = 0;
+        update['users/' + key + '/stats'] = { battles: 0, wins: 0, losses: 0, draws: 0, refereeBattles: 0, audienceLikes: 0 };
+        // значки-награды больше не трогаем — это не сезонная статистика,
+        // а память об участии, обнулять её вместе с очками смысла нет
+        // (см. форму "Принудительная выдача значка" ниже — на случай если
+        // нужно восстановить/раздать значок заново после старой версии сброса)
+      });
+      await db.ref().update(update);
+      logAction('full_reset', '—', 'Все игроки', '—',
+        `Сброшены очки/статистика у ${userKeys.length} игроков; удалены matches/battles/queue/refereeQueue`);
+      resultEl.textContent = `Готово — сброшено ${userKeys.length} игроков, вся история боёв удалена. Пароль сброса одноразовый — уже стёрт, для следующего раза задай новый.`;
+      resultEl.style.display = 'block';
+      document.getElementById('danger-secret-input').value = '';
+      // если сейчас открыта чья-то карточка — обновим показанные в ней
+      // очки/статистику, а то они останутся висеть старыми до нового поиска
+      if (foundUserKey) {
+        db.ref('users/' + foundUserKey).once('value').then((snap) => { if (snap.exists()) openUserDetail(foundUserKey, snap.val()); });
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Не удалось выполнить сброс: ' + (err.message || err));
+    } finally {
+      btn.textContent = 'Подтвердить и сбросить всё';
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('btn-danger-badge-grant').addEventListener('click', async () => {
+    if (!dangerZoneVerifiedCanManage) return; // на случай подделки клика мимо скрытого UI
+    const badgeId = document.getElementById('danger-badge-select').value;
+    if (!badgeId) return;
+    const def = badgeDefsCache[badgeId];
+    const label = def?.label || badgeId;
+    if (!confirm(`Выдать значок "${label}" абсолютно всем игрокам?`)) return;
+    const btn = document.getElementById('btn-danger-badge-grant');
+    const resultEl = document.getElementById('danger-badge-grant-result');
+    btn.disabled = true;
+    try {
+      const usersSnap = await db.ref('users').once('value');
+      const users = usersSnap.val() || {};
+      const userKeys = Object.keys(users);
+      const update = {};
+      userKeys.forEach((key) => { update['users/' + key + '/badges/' + badgeId] = true; });
+      await db.ref().update(update);
+      logAction('badge_mass_given', '—', 'Все игроки', '—', `Значок "${label}" принудительно выдан ${userKeys.length} игрокам`);
+      resultEl.textContent = `Готово — значок "${label}" выдан ${userKeys.length} игрокам.`;
+      resultEl.style.display = 'block';
+      if (foundUserKey) {
+        db.ref('users/' + foundUserKey).once('value').then((snap) => { if (snap.exists()) openUserDetail(foundUserKey, snap.val()); });
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Не удалось выдать значок: ' + (err.message || err));
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('btn-danger-delete-guests').addEventListener('click', async () => {
+    if (!dangerZoneVerifiedCanManage) return; // на случай подделки клика мимо скрытого UI
+    const btn = document.getElementById('btn-danger-delete-guests');
+    const resultEl = document.getElementById('danger-delete-guests-result');
+    btn.disabled = true;
+    try {
+      const usersSnap = await db.ref('users').once('value');
+      const users = usersSnap.val() || {};
+      const guestKeys = Object.keys(users).filter((key) => key.startsWith('guest_'));
+      if (!guestKeys.length) {
+        resultEl.textContent = 'Гостевых аккаунтов сейчас нет.';
+        resultEl.style.display = 'block';
+        return;
+      }
+      if (!confirm(`Удалить ${guestKeys.length} гостевых аккаунтов?`)) return;
+      const update = {};
+      guestKeys.forEach((key) => {
+        update['users/' + key] = null;
+        update['presence/' + key] = null;
+      });
+      await db.ref().update(update);
+      logAction('guests_deleted', '—', 'Гостевые аккаунты', '—', `Удалено ${guestKeys.length} гостевых аккаунтов`);
+      resultEl.textContent = `Готово — удалено ${guestKeys.length} гостевых аккаунтов.`;
+      resultEl.style.display = 'block';
+      loadUserList(userListWrap.style.display !== 'none');
+    } catch (err) {
+      console.error(err);
+      alert('Не удалось удалить гостей: ' + (err.message || err));
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // ===== Режим обслуживания / аварийный режим =====
+  // Оба — просто два булевых поля в config/ (плюс необязательный текст
+  // сообщения для обслуживания). Проверка на стороне index.html и здесь,
+  // при входе в панель, — см. resolveIdentity() в index.html и блок
+  // проверки роли выше. Тумблеры — тот же .toggle-row, что и в "Правах
+  // админов". Обслуживание/закрытый бета-тест делегируются правом "danger"
+  // — а вот аварийный режим ниже жёстко требует superadmin.
+  document.getElementById('toggle-maintenance').addEventListener('click', () => {
+    if (!dangerZoneVerifiedCanManage) return; // на случай подделки клика мимо скрытого UI
+    const toggle = document.getElementById('toggle-maintenance');
+    const newVal = !toggle.classList.contains('on');
+    if (newVal && !confirm('Включить режим обслуживания? Обычные игроки не смогут пользоваться сайтом, пока его не выключишь.')) return;
+    db.ref('config/maintenanceMode').set(newVal).then(() => {
+      toggle.classList.toggle('on', newVal);
+      logAction('maintenance_toggled', '—', '—', '—', newVal ? 'Включён' : 'Выключен');
+    }).catch((err) => { console.error(err); alert('Не удалось изменить режим обслуживания: ' + (err.message || err)); });
+  });
+
+  document.getElementById('btn-save-maintenance-message').addEventListener('click', () => {
+    if (!dangerZoneVerifiedCanManage) return; // на случай подделки клика мимо скрытого UI
+    const val = document.getElementById('maintenance-message-input').value.trim();
+    db.ref('config/maintenanceMessage').set(val || null).then(() => {
+      logAction('maintenance_message_changed', '—', '—', '—', val || '(очищено)');
+    }).catch((err) => { console.error(err); alert('Не удалось сохранить сообщение: ' + (err.message || err)); });
+  });
+
+  document.getElementById('toggle-closed-beta').addEventListener('click', () => {
+    if (!dangerZoneVerifiedCanManage) return; // на случай подделки клика мимо скрытого UI
+    const toggle = document.getElementById('toggle-closed-beta');
+    const newVal = !toggle.classList.contains('on');
+    if (newVal && !confirm('Включить закрытый бета-тест? Новые визитёры без аккаунта увидят экран заявки вместо мгновенного входа.')) return;
+    db.ref('config/closedBeta').set(newVal).then(() => {
+      toggle.classList.toggle('on', newVal);
+      logAction('closed_beta_toggled', '—', '—', '—', newVal ? 'Включён' : 'Выключен');
+    }).catch((err) => { console.error(err); alert('Не удалось изменить режим закрытого бета-теста: ' + (err.message || err)); });
+  });
+
+  document.getElementById('toggle-emergency').addEventListener('click', () => {
+    if (dangerZoneVerifiedRole !== 'superadmin') return; // жёсткое требование superadmin, поверх права "danger" — на случай подделки клика мимо скрытого UI
+    const toggle = document.getElementById('toggle-emergency');
+    const newVal = !toggle.classList.contains('on');
+    const warning = newVal
+      ? 'Включить АВАРИЙНЫЙ РЕЖИМ? Это закроет сайт и эту панель для ВСЕХ, включая Админов и Модераторов. Продолжить?'
+      : 'Выключить аварийный режим и вернуть доступ всем?';
+    if (!confirm(warning)) return;
+    db.ref('config/emergencyLockdown').set(newVal).then(() => {
+      toggle.classList.toggle('on', newVal);
+      logAction('emergency_lockdown_toggled', '—', '—', '—', newVal ? 'Включён' : 'Выключен');
+    }).catch((err) => { console.error(err); alert('Не удалось изменить аварийный режим: ' + (err.message || err)); });
+  });
 </script>
 </body>
 </html>
