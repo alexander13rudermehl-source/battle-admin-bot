@@ -227,7 +227,7 @@
 <div class="wrap">
 
   <div class="topbar">
-    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Вернул «Систему» (теперь делегируется галочкой, сброс/lockdown — только superadmin) + добавил Статистику и Бэкапы/Восстановление (данные теперь в приватном battle-data-admin-bot).">v1.9</span></div>
+    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Добавлена вкладка «Администрация» — сводная таблица прав всех модераторов/админов, без захода в карточку каждого по отдельности.">v2.0</span></div>
     <div class="me" id="me-box" style="display:none;">
       Вошёл как <b id="me-name">—</b><br>
       <span id="me-role">—</span><br>
@@ -311,6 +311,11 @@
            superadmin (прячется в applyRoleUI, см. canManageRoles), там
            видно буквально всё, включая привязанные email (emailLogins) -->
       <div class="tab" data-tab="database" id="tab-database">База</div>
+      <!-- сводная таблица прав всех модераторов/админов одним экраном, без
+           захода в карточку каждого по отдельности — тоже только
+           superadmin (см. applyRoleUI/canManageRoles); роль тут не меняют,
+           только делегируемые permissions (см. loadAdminsTab/setAdminPermission) -->
+      <div class="tab" data-tab="admins" id="tab-admins">Администрация</div>
       <!-- бэкап/восстановление кода и базы — тоже только superadmin (см.
            applyRoleUI/canManageRoles), это либо разрушительное действие,
            либо запись в чужой репозиторий -->
@@ -707,6 +712,20 @@
       <div class="admin-card" style="padding:10px 12px;">
         <div id="db-tree-root" class="db-tree"><div class="admin-empty">Загрузка…</div></div>
       </div>
+    </div>
+
+    <!-- ===== "Администрация" — сводная таблица прав всех модераторов/
+         админов/супердоступов одним экраном, чтобы не заходить в карточку
+         каждого по отдельности через поиск в "Панели". Живой db.ref('users')
+         .on('value') (отключается при уходе с вкладки — см. диспетчер
+         кликов по .tab), роль — только текст (менять роль по-прежнему
+         только через карточку игрока, см. changeUserRole), а чекбоксы прав
+         зовут тот же setAdminPermission(uid, key, value), что и карточка
+         (см. toggleAdminPermission), так что путь записи один и тот же. -->
+    <div class="subview" data-panel="admins" id="panel-admins">
+      <div class="section-label" id="admins-title">Модераторы и админы</div>
+      <div id="admins-table-list"></div>
+      <div class="admin-empty" id="admins-table-empty" style="display:none;">Пока нет ни одного модератора/админа</div>
     </div>
 
     <!-- ===== "Бэкапы"/"Восстановление" — портировано из battle-data-admin-bot
@@ -1294,12 +1313,17 @@
       // ушли с "База" на другую вкладку — снимаем все живые слушатели веток,
       // незачем продолжать тянуть трафик за экраном, который никто не видит
       if (tab.dataset.tab !== 'database') detachAllDbLiveBranches();
+      // "Администрация" держит свой живой db.ref('users').on('value') только
+      // пока вкладка открыта — снимаем его при уходе на любую другую вкладку,
+      // как и с живыми ветками "База" выше.
+      if (tab.dataset.tab !== 'admins') detachAdminsLiveListener();
       if (tab.dataset.tab === 'logs') openAllLogs();
       if (tab.dataset.tab === 'errors') loadErrorReports();
       if (tab.dataset.tab === 'event') loadEventsAdminList();
       if (tab.dataset.tab === 'clans') loadClansAdminPanel();
       if (tab.dataset.tab === 'beta') loadBetaApplicationsPanel();
       if (tab.dataset.tab === 'database') loadDatabaseTree();
+      if (tab.dataset.tab === 'admins') loadAdminsTab();
       if (tab.dataset.tab === 'stats') loadStatsTab();
       if (tab.dataset.tab === 'backups' || tab.dataset.tab === 'restore') loadAllBackupLists();
       if (tab.dataset.tab === 'danger') openDangerZone();
@@ -1542,14 +1566,24 @@
     });
   }
 
+  // Единственный путь записи для делегируемых прав — и у карточки игрока
+  // ("Настроить права"), и у сводной таблицы "Администрация" (см.
+  // renderAdminsTable). Так оба места гарантированно не могут разойтись:
+  // поменяется запись — поменяется сразу в обоих UI.
+  function setAdminPermission(userKey, permId, value, targetName, targetPlayerId) {
+    if (!canManageRoles()) return Promise.reject(new Error('нет прав')); // на случай подделки клика мимо скрытого UI
+    const permLabel = (PERMISSION_DEFS.find((p) => p.id === permId) || {}).label || permId;
+    return db.ref('users/' + userKey + '/permissions/' + permId).set(value).then(() => {
+      logAction('admin_permission_changed', userKey, targetName, targetPlayerId, `${permLabel}: ${value ? 'включено' : 'выключено'}`);
+    });
+  }
+
   function toggleAdminPermission(userKey, permId, wasOn) {
     if (!canManageRoles()) return; // на случай подделки клика мимо скрытого UI
     const newVal = !wasOn;
-    const permLabel = (PERMISSION_DEFS.find((p) => p.id === permId) || {}).label || permId;
-    db.ref('users/' + userKey + '/permissions/' + permId).set(newVal).then(() => {
-      const targetName = document.getElementById('rights-name').textContent;
-      const targetPlayerId = document.getElementById('rights-id').textContent;
-      logAction('admin_permission_changed', userKey, targetName, targetPlayerId, `${permLabel}: ${newVal ? 'включено' : 'выключено'}`);
+    const targetName = document.getElementById('rights-name').textContent;
+    const targetPlayerId = document.getElementById('rights-id').textContent;
+    setAdminPermission(userKey, permId, newVal, targetName, targetPlayerId).then(() => {
       return db.ref('users/' + userKey).once('value');
     }).then((snap) => {
       if (snap.exists()) renderAdminRightsToggles(userKey, resolvePermissions(snap.val()));
@@ -1590,6 +1624,9 @@
     // с почтами игроков) — только superadmin, без промежуточных прав
     const databaseTab = document.querySelector('.tab[data-tab="database"]');
     if (databaseTab) databaseTab.style.display = canManageRoles() ? '' : 'none';
+    // "Администрация" — сводная таблица прав, тоже только superadmin, как и "База".
+    const adminsTab = document.querySelector('.tab[data-tab="admins"]');
+    if (adminsTab) adminsTab.style.display = canManageRoles() ? '' : 'none';
     // "Бэкапы"/"Восстановление" — как и "База", не делегируется, только
     // superadmin (см. CLAUDE.md этого репозитория и battle-data-admin-bot).
     const backupsTab = document.querySelector('.tab[data-tab="backups"]');
@@ -2603,6 +2640,88 @@
         rootEl.innerHTML = '<div class="admin-empty">Не удалось загрузить список веток базы</div>';
         console.error('База: корневой список', err);
       });
+  }
+
+  // ===== "Администрация" — сводная таблица прав всех модераторов/админов
+  // одним экраном (вместо захода в карточку каждого через поиск в
+  // "Панели"). Роль показана только текстом — менять её по-прежнему можно
+  // только через карточку игрока (changeUserRole), тут это нарочно не
+  // дублируется. Чекбоксы прав пишут через тот же setAdminPermission, что
+  // и "Настроить права" в карточке — один путь записи на оба UI.
+  let adminsListRef = null;
+  let adminsListCb = null;
+
+  function detachAdminsLiveListener() {
+    if (adminsListRef && adminsListCb) adminsListRef.off('value', adminsListCb);
+    adminsListRef = null;
+    adminsListCb = null;
+  }
+
+  function loadAdminsTab() {
+    if (!canManageRoles()) return; // на случай подделки клика мимо скрытой вкладки
+    detachAdminsLiveListener();
+    adminsListRef = db.ref('users');
+    adminsListCb = adminsListRef.on('value', (snap) => {
+      const users = snap.val() || {};
+      const staff = Object.entries(users).filter(([, u]) => ['moderator', 'admin', 'superadmin'].includes(u?.role));
+      staff.sort((a, b) => (a[1].firstName || '').localeCompare(b[1].firstName || '', 'ru'));
+      renderAdminsTable(staff);
+    }, (err) => console.error('Администрация: список', err));
+  }
+
+  function renderAdminsTable(staff) {
+    const listEl = document.getElementById('admins-table-list');
+    const emptyEl = document.getElementById('admins-table-empty');
+    document.getElementById('admins-title').textContent = `Модераторы и админы (${staff.length})`;
+    if (!staff.length) {
+      listEl.innerHTML = '';
+      emptyEl.style.display = 'block';
+      return;
+    }
+    emptyEl.style.display = 'none';
+
+    listEl.innerHTML = staff.map(([uid, u]) => {
+      const role = u.role;
+      const isSuper = role === 'superadmin';
+      const perms = resolvePermissions(u);
+      const togglesHtml = PERMISSION_DEFS.map((p) => `
+        <div class="toggle-row${perms[p.id] ? ' on' : ''}${isSuper ? '' : ' admins-perm-toggle'}" data-uid="${uid}" data-perm="${p.id}" style="padding:9px 0;${isSuper ? ' opacity:0.55; cursor:default;' : ''}">
+          <div class="toggle-check"></div>
+          <div class="toggle-label">${escapeHtml(p.label)}</div>
+        </div>
+      `).join('');
+      return `
+        <div class="admin-card">
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:4px;">
+            <div class="r-avatar" style="width:36px; height:36px; margin-bottom:0; font-size:12px; flex-shrink:0;${u.avatarData ? ` background-image:url('${u.avatarData}'); background-size:cover; background-position:center;` : ''}">${u.avatarData ? '' : (u.firstName || '??').slice(0, 2).toUpperCase()}</div>
+            <div style="min-width:0; flex:1;">
+              <div style="font-size:13.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(u.firstName || 'Без имени')}</div>
+              <div style="font-size:11.5px; color:var(--muted);">${escapeHtml(u.playerId || uid)}</div>
+            </div>
+            <div class="u-role-badge role-${role}">${role}</div>
+          </div>
+          ${isSuper ? '<div class="admin-empty" style="text-align:left; padding:4px 0 6px;">Супердоступ — есть всё по умолчанию</div>' : ''}
+          <div>${togglesHtml}</div>
+        </div>
+      `;
+    }).join('');
+
+    listEl.querySelectorAll('.admins-perm-toggle').forEach((row) => {
+      row.addEventListener('click', () => {
+        const uid = row.dataset.uid;
+        const permId = row.dataset.perm;
+        const wasOn = row.classList.contains('on');
+        const u = (staff.find(([k]) => k === uid) || [])[1] || {};
+        const targetName = u.firstName || 'Без имени';
+        const targetPlayerId = u.playerId || uid;
+        setAdminPermission(uid, permId, !wasOn, targetName, targetPlayerId).catch((err) => {
+          console.error(err);
+          alert('Не удалось изменить право: ' + (err.message || err));
+        });
+        // визуальный итог придёт сам — таблица живая (db.ref('users').on('value'))
+        // и перерисуется, как только запись в базу применится
+      });
+    });
   }
 
   // ===== "Статистика" — портировано из battle-data-admin-bot. Всё
