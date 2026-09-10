@@ -234,7 +234,7 @@
 <div class="wrap">
 
   <div class="topbar">
-    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Объединил связанные вкладки: Бэкапы+Восстановление, Журнал+Ошибки, База+Система, Кланы+Заявки — 13 вкладок стало 9, без потери функций и прав доступа.">v2.1</span></div>
+    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Обнаружение дублирующегося токена устройства теперь пишется в Журнал действий.">v2.2</span></div>
     <div class="me" id="me-box" style="display:none;">
       Вошёл как <b id="me-name">—</b><br>
       <span id="me-role">—</span><br>
@@ -1128,7 +1128,14 @@
       // текущий), это признак утечки/дублирования, а не "кто первый".
       const updates = {};
       Object.keys(matches).forEach((matchUid) => { updates[matchUid + '/panelLocked'] = true; });
-      return db.ref('users').update(updates).then(() => false);
+      return db.ref('users').update(updates).then(() => {
+        const involved = Object.keys(matches).map((matchUid) => {
+          const m = matches[matchUid] || {};
+          return `${m.firstName || 'Игрок'} (${m.playerId || matchUid})`;
+        }).join(', ');
+        logAction('token_collision_detected', uid, null, null, `Совпадение deviceToken у аккаунтов: ${involved}`);
+        return false;
+      });
     });
   }
 
@@ -2042,7 +2049,8 @@
     emergency_lockdown_toggled: 'Аварийный режим переключён',
     closed_beta_toggled: 'Закрытый бета-тест переключён',
     beta_application_approved: 'Заявка на бета-тест одобрена',
-    beta_application_rejected: 'Заявка на бета-тест отклонена'
+    beta_application_rejected: 'Заявка на бета-тест отклонена',
+    token_collision_detected: 'Обнаружен дублирующийся токен устройства — аккаунты заблокированы'
   };
 
   function logAction(actionType, targetKey, targetName, targetPlayerId, details) {
