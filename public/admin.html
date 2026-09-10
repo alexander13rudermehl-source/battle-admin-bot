@@ -220,6 +220,13 @@
   .token-row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
   .token-row > input{ flex:1 1 220px; }
   .lock-line{ font-size:12px; color:var(--muted); margin-top:10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+
+  /* ===== суб-нав внутри объединённых вкладок (Бэкапы/Восстановление,
+     Журнал/Ошибки, База/Система, Кланы/Заявки) — две кнопки-переключателя
+     тем же .btn, что и везде в файле, активная — btn-gold, неактивная —
+     btn-line, чтобы не заводить отдельный паттерн навигации. */
+  .subnav{ display:flex; gap:8px; margin-bottom:16px; }
+  .subnav .btn{ flex:1; }
 </style>
 </head>
 <body>
@@ -227,7 +234,7 @@
 <div class="wrap">
 
   <div class="topbar">
-    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Добавлена вкладка «Администрация» — сводная таблица прав всех модераторов/админов, без захода в карточку каждого по отдельности.">v2.0</span></div>
+    <div class="brand">БАТТЛ<span>.</span> АДМИН <span class="brand-version" id="admin-version" title="Объединил связанные вкладки: Бэкапы+Восстановление, Журнал+Ошибки, База+Система, Кланы+Заявки — 13 вкладок стало 9, без потери функций и прав доступа.">v2.1</span></div>
     <div class="me" id="me-box" style="display:none;">
       Вошёл как <b id="me-name">—</b><br>
       <span id="me-role">—</span><br>
@@ -300,33 +307,42 @@
       <div class="tab active" data-tab="panel">Панель</div>
       <div class="tab" data-tab="account">Аккаунт</div>
       <div class="tab" data-tab="event">Ивент</div>
+      <!-- "Журнал" объединяет журнал действий ("Действия") и присланные
+           игроками ошибки ("Ошибки клиента") — суб-нав внутри .subview,
+           см. showLogsSection(). Обе части видны всем, у кого вообще есть
+           доступ к панели — так было и раньше у каждой по отдельности. -->
       <div class="tab" data-tab="logs">Журнал</div>
-      <div class="tab" data-tab="errors" id="tab-errors">Ошибки</div>
-      <div class="tab" data-tab="clans">Кланы</div>
+      <!-- "Заявки" объединяет модерацию кланов ("Заявки кланов", право
+           clans) и заявки на закрытый бета-тест ("Заявки на бета", право
+           beta) — суб-нав внутри .subview, см. showBetaSection(). Сама
+           вкладка видна, если есть хоть одно из двух прав (объединение);
+           видимость кнопок суб-нава и загрузка контента — по своему
+           условию у каждой части, см. applyRoleUI. -->
       <div class="tab" data-tab="beta">Заявки</div>
       <!-- видна всем, у кого вообще есть доступ к панели — отчёт "только
            для чтения" (см. loadStatsTab), не отдельное переключаемое право -->
       <div class="tab" data-tab="stats" id="tab-stats">Статистика</div>
-      <!-- сырой просмотр всей Firebase RTDB деревом — доступ только
-           superadmin (прячется в applyRoleUI, см. canManageRoles), там
-           видно буквально всё, включая привязанные email (emailLogins) -->
-      <div class="tab" data-tab="database" id="tab-database">База</div>
       <!-- сводная таблица прав всех модераторов/админов одним экраном, без
            захода в карточку каждого по отдельности — тоже только
            superadmin (см. applyRoleUI/canManageRoles); роль тут не меняют,
            только делегируемые permissions (см. loadAdminsTab/setAdminPermission) -->
       <div class="tab" data-tab="admins" id="tab-admins">Администрация</div>
-      <!-- бэкап/восстановление кода и базы — тоже только superadmin (см.
+      <!-- "Бэкапы" объединяет список снимков/"бэкап сейчас" и
+           восстановление — суб-нав внутри .subview, см. showBackupsSection().
+           Обе части были и остаются доступны только superadmin (см.
            applyRoleUI/canManageRoles), это либо разрушительное действие,
-           либо запись в чужой репозиторий -->
+           либо запись в чужой репозиторий — объединение вкладок тут не
+           меняет эффективный доступ. -->
       <div class="tab" data-tab="backups" id="tab-backups">Бэкапы</div>
-      <div class="tab" data-tab="restore" id="tab-restore">Восстановление</div>
-      <!-- видна всем, у кого вообще есть доступ к панели (moderator/admin/
-           superadmin) — а вот воспользоваться получится только у тех, у
-           кого включено делегируемое право "danger" (см. canManageDanger),
-           и лишь двумя самыми безобидными действиями; сброс и аварийный
-           режим требуют ЖИВОЙ проверки role === 'superadmin' при каждом
-           открытии вкладки (см. openDangerZone), а не один раз при входе -->
+      <!-- "Система" объединяет опасную зону (обслуживание/сброс/аварийный
+           режим, право danger) и сырой просмотр всей Firebase RTDB
+           деревом ("База данных", только superadmin) — суб-нав внутри
+           .subview, см. showDangerSection(). Вкладка видна, если есть хоть
+           одно из двух прав (canManageDanger() || canManageRoles());
+           кнопка "База данных" суб-нава скрыта не-superadmin (см.
+           applyRoleUI), а "Опасная зона" по-прежнему сама живо
+           перепроверяет role === 'superadmin' на сброс/аварийный режим
+           при каждом открытии (см. openDangerZone). -->
       <div class="tab" data-tab="danger" id="tab-danger">Система</div>
     </div>
 
@@ -585,55 +601,72 @@
 
     </div>
 
-    <!-- ===== журнал действий ===== -->
+    <!-- ===== "Журнал" — объединяет журнал действий ("Действия") и
+         присланные игроками ошибки ("Ошибки клиента", кнопка "Отправить"
+         на debug-окошке в index.html, см. window.showDebugError там — не
+         постоянный поток телеметрии, а то, что игрок сам решил прислать).
+         Обе части видны всем, у кого вообще есть доступ к панели — так
+         было и раньше у каждой по отдельности, см. showLogsSection(). -->
     <div class="subview" data-panel="logs" id="panel-logs">
-      <div class="back-link" id="log-back-to-all" style="display:none;">← ко всем записям</div>
-      <div class="section-label" id="log-title">Журнал действий (все)</div>
-      <div id="log-list"></div>
-      <div class="admin-empty" id="log-empty" style="display:none;">Записей пока нет</div>
+      <div class="subnav">
+        <button class="btn btn-gold" id="logs-sub-actions">Действия</button>
+        <button class="btn btn-line" id="logs-sub-errors">Ошибки клиента</button>
+      </div>
+
+      <div id="logs-section-actions">
+        <div class="back-link" id="log-back-to-all" style="display:none;">← ко всем записям</div>
+        <div class="section-label" id="log-title">Журнал действий (все)</div>
+        <div id="log-list"></div>
+        <div class="admin-empty" id="log-empty" style="display:none;">Записей пока нет</div>
+      </div>
+
+      <div id="logs-section-errors" style="display:none;">
+        <div class="section-label" id="errors-title">Присланные ошибки (0)</div>
+        <div id="errors-list"></div>
+        <div class="admin-empty" id="errors-empty" style="display:none;">Пока никто ничего не присылал</div>
+      </div>
     </div>
 
-    <!-- ===== ошибки, присланные игроками с кнопки "Отправить" на debug-
-         окошке в index.html (см. window.showDebugError там) — не
-         постоянный поток телеметрии, а именно то, что игрок сам решил
-         прислать, так что записей обычно немного. -->
-    <div class="subview" data-panel="errors" id="panel-errors">
-      <div class="section-label" id="errors-title">Присланные ошибки (0)</div>
-      <div id="errors-list"></div>
-      <div class="admin-empty" id="errors-empty" style="display:none;">Пока никто ничего не присылал</div>
-    </div>
+    <!-- ===== "Заявки" — объединяет заявки на закрытый бета-тест
+         ("Заявки на бета", право beta — см. ниже) и модерацию кланов
+         ("Заявки кланов", право clans). Суб-нав, см. showBetaSection();
+         каждая секция видна/загружается только по своему исходному праву,
+         см. applyRoleUI — сама вкладка видна, если есть хоть одно из двух.
 
-    <!-- ===== модерация кланов: создание клана и ссылка на его Telegram-чат
+         Заявки на закрытый бета-тест: пока config/closedBeta включён
+         (тумблер в "Системе"), index.html не создаёт аккаунт новым
+         визитёрам сам — вместо этого пишет betaApplications/<telegramId> и
+         показывает экран заявки. Одобрение здесь и создаёт настоящий
+         users/<telegramId> (с теми же полями по умолчанию, что и на самом
+         сайте при первом визите — см. approveBetaApplication).
+
+         Модерация кланов: создание клана и ссылка на его Telegram-чат
          публикуются только после ручного одобрения — чтобы через название
          клана или ссылку на "чат" не протаскивали рекламу. Пока клан на
          рассмотрении, его создатель не может создать другой клан или
          вступить в другой (это на стороне основного сайта, см. index.html:
-         users/<uid>/clanId ставится сразу при создании, ещё до одобрения).
-         Вкладка видна только тем, у кого включено право "clans" (см.
-         applyRoleUI/canManageClans) — у superadmin всегда, у admin —
-         только если явно выдано через "Настроить права". -->
-    <div class="subview" data-panel="clans" id="panel-clans">
-      <div class="section-label">Кланы на рассмотрении</div>
-      <div id="clans-pending-list"></div>
-      <div class="admin-empty" id="clans-pending-empty" style="display:none;">Нет кланов, ожидающих проверки</div>
-
-      <div class="section-label" style="margin-top:22px;">Ссылки на чат — на проверке</div>
-      <div id="clan-chats-pending-list"></div>
-      <div class="admin-empty" id="clan-chats-pending-empty" style="display:none;">Нет ссылок, ожидающих проверки</div>
-    </div>
-
-    <!-- ===== заявки на закрытый бета-тест =====
-         Пока config/closedBeta включён (тумблер в "Правилах платформы"),
-         index.html не создаёт аккаунт новым визитёрам сам — вместо этого
-         пишет betaApplications/<telegramId> и показывает экран заявки.
-         Одобрение здесь и создаёт настоящий users/<telegramId> (с теми же
-         полями по умолчанию, что и на самом сайте при первом визите — см.
-         approveBetaApplication). Вкладка видна только тем, у кого включено
-         право "beta" (см. applyRoleUI/canManageBeta). -->
+         users/<uid>/clanId ставится сразу при создании, ещё до одобрения). -->
     <div class="subview" data-panel="beta" id="panel-beta">
-      <div class="section-label">Заявки на рассмотрении</div>
-      <div id="beta-applications-list"></div>
-      <div class="admin-empty" id="beta-applications-empty" style="display:none;">Нет заявок, ожидающих проверки</div>
+      <div class="subnav">
+        <button class="btn btn-gold" id="beta-sub-beta">Заявки на бета</button>
+        <button class="btn btn-line" id="beta-sub-clans">Заявки кланов</button>
+      </div>
+
+      <div id="beta-section-beta">
+        <div class="section-label">Заявки на рассмотрении</div>
+        <div id="beta-applications-list"></div>
+        <div class="admin-empty" id="beta-applications-empty" style="display:none;">Нет заявок, ожидающих проверки</div>
+      </div>
+
+      <div id="beta-section-clans" style="display:none;">
+        <div class="section-label">Кланы на рассмотрении</div>
+        <div id="clans-pending-list"></div>
+        <div class="admin-empty" id="clans-pending-empty" style="display:none;">Нет кланов, ожидающих проверки</div>
+
+        <div class="section-label" style="margin-top:22px;">Ссылки на чат — на проверке</div>
+        <div id="clan-chats-pending-list"></div>
+        <div class="admin-empty" id="clan-chats-pending-empty" style="display:none;">Нет ссылок, ожидающих проверки</div>
+      </div>
     </div>
 
     <!-- ===== "Статистика" — портировано из battle-data-admin-bot (та же
@@ -699,21 +732,6 @@
       </div>
     </div>
 
-    <!-- ===== "База" — сырой просмотр всей Firebase RTDB деревом. Верхний
-         уровень получаем дёшево через REST ?shallow=true (просто список
-         ключей, без выкачивания всей базы разом); открытая ветка потом уже
-         живая — db.ref(path).on('value') — и при реальном изменении внутри
-         неё коротко подсвечивается зелёным (см. renderDbNode/diffDbValues
-         в JS). Один запрос на ветку верхнего уровня, а не десятки — если
-         ветка уже открыта живьём, её потомки просто читаются из уже
-         загруженного снимка, без новых запросов к базе. -->
-    <div class="subview" data-panel="database" id="panel-database">
-      <div class="section-label">Firebase RTDB — дерево, живое обновление</div>
-      <div class="admin-card" style="padding:10px 12px;">
-        <div id="db-tree-root" class="db-tree"><div class="admin-empty">Загрузка…</div></div>
-      </div>
-    </div>
-
     <!-- ===== "Администрация" — сводная таблица прав всех модераторов/
          админов/супердоступов одним экраном, чтобы не заходить в карточку
          каждого по отдельности через поиск в "Панели". Живой db.ref('users')
@@ -728,10 +746,12 @@
       <div class="admin-empty" id="admins-table-empty" style="display:none;">Пока нет ни одного модератора/админа</div>
     </div>
 
-    <!-- ===== "Бэкапы"/"Восстановление" — портировано из battle-data-admin-bot
-         (тот же GitHub-токен, тот же lock/unlock-механизм). Доступ только
-         superadmin (canManageRoles) — не делегируется, как и "База": здесь
-         либо запись в чужой репозиторий, либо необратимое восстановление.
+    <!-- ===== "Бэкапы" — объединяет список снимков/"бэкап сейчас" и
+         восстановление, портировано из battle-data-admin-bot (тот же
+         GitHub-токен, тот же lock/unlock-механизм). Суб-нав, см.
+         showBackupsSection(). Доступ только superadmin (canManageRoles) —
+         не делегируется, как и "База данных" в "Системе": здесь либо
+         запись в чужой репозиторий, либо необратимое восстановление.
 
          Отличие от источника: battle-data-admin-bot становится ПРИВАТНЫМ
          репозиторием — листинг снимков и их скачивание больше не работают
@@ -743,108 +763,120 @@
          battle-admin-bot) тоже токеном же, эти два репозитория остаются
          публичными. -->
     <div class="subview" data-panel="backups" id="panel-backups">
-      <div class="admin-card">
-        <div class="section-label">GitHub-токен</div>
-        <div class="admin-empty" style="text-align:left; padding:0 0 10px;">
-          Нужен для листинга/скачивания снимков (battle-data-admin-bot теперь приватный — анонимное чтение больше не работает) и для кнопки «Сделать бэкап сейчас» и восстановления кода. Токен уходит напрямую в api.github.com из этого браузера (никакого промежуточного сервера нет) и хранится только в localStorage.
-          <br><br>
-          Fine-grained Personal Access Token (github.com → Settings → Developer settings → Fine-grained tokens), выданный только на три репозитория: <b>battle-data-admin-bot</b> (Contents: Read and write — теперь нужно и для чтения снимков, не только для бэкапа; Actions: Read and write — для «Сделать бэкап сейчас»), <b>index.html</b> и <b>battle-admin-bot</b> (оба — Contents: Read and write, для восстановления кода).
+      <div class="subnav">
+        <button class="btn btn-gold" id="backups-sub-list">Список и бэкап сейчас</button>
+        <button class="btn btn-line" id="backups-sub-restore">Восстановление</button>
+      </div>
+
+      <div id="backups-section-list">
+        <div class="admin-card">
+          <div class="section-label">GitHub-токен</div>
+          <div class="admin-empty" style="text-align:left; padding:0 0 10px;">
+            Нужен для листинга/скачивания снимков (battle-data-admin-bot теперь приватный — анонимное чтение больше не работает) и для кнопки «Сделать бэкап сейчас» и восстановления кода. Токен уходит напрямую в api.github.com из этого браузера (никакого промежуточного сервера нет) и хранится только в localStorage.
+            <br><br>
+            Fine-grained Personal Access Token (github.com → Settings → Developer settings → Fine-grained tokens), выданный только на три репозитория: <b>battle-data-admin-bot</b> (Contents: Read and write — теперь нужно и для чтения снимков, не только для бэкапа; Actions: Read and write — для «Сделать бэкап сейчас»), <b>index.html</b> и <b>battle-admin-bot</b> (оба — Contents: Read and write, для восстановления кода).
+          </div>
+          <div class="token-row">
+            <input type="password" class="field-input" id="gh-token-input" placeholder="github_pat_...">
+            <button class="btn btn-line" id="gh-token-save-btn">Сохранить</button>
+            <button class="btn btn-gold" id="gh-token-lock-btn">Закрепить токен</button>
+            <span class="inline-confirm" id="gh-token-save-confirm">Сохранено ✓</span>
+          </div>
+          <div class="lock-line" id="gh-token-locked-line" style="display:none;">
+            <span>🔒 Токен закреплён</span>
+            <button class="btn btn-line" id="gh-token-change-btn">Изменить токен</button>
+          </div>
+          <div class="status-line" id="gh-token-status"></div>
         </div>
-        <div class="token-row">
-          <input type="password" class="field-input" id="gh-token-input" placeholder="github_pat_...">
-          <button class="btn btn-line" id="gh-token-save-btn">Сохранить</button>
-          <button class="btn btn-gold" id="gh-token-lock-btn">Закрепить токен</button>
-          <span class="inline-confirm" id="gh-token-save-confirm">Сохранено ✓</span>
+
+        <div class="admin-card" id="gh-token-requests-card" style="display:none;">
+          <div class="section-label">Заявки на изменение токена</div>
+          <div class="admin-empty" style="text-align:left; padding:0 0 10px;">Запросы на разблокировку токена с других устройств/браузеров. Подтверждай только те, что ты сам инициировал.</div>
+          <div id="gh-token-requests-list"></div>
         </div>
-        <div class="lock-line" id="gh-token-locked-line" style="display:none;">
-          <span>🔒 Токен закреплён</span>
-          <button class="btn btn-line" id="gh-token-change-btn">Изменить токен</button>
+
+        <div class="admin-card">
+          <div class="section-label">Сделать бэкап сейчас</div>
+          <div class="admin-empty" style="text-align:left; padding:0 0 10px;">Запускает оба workflow в battle-data-admin-bot немедленно (обычно они срабатывают раз в сутки по расписанию): свежий zip кода index.html и battle-admin-bot, свежий JSON всей базы. Снимок появится в списках ниже примерно через 1–2 минуты — тогда обнови страницу.</div>
+          <button class="btn btn-gold" id="backup-now-btn" style="width:100%;">Сделать бэкап сейчас</button>
+          <div class="status-line" id="backup-now-status"></div>
         </div>
-        <div class="status-line" id="gh-token-status"></div>
+
+        <div class="admin-card">
+          <div class="section-label">Код — index.html</div>
+          <div class="admin-empty" style="text-align:left; padding:0 0 8px;">Ежедневный zip-снимок исходников репозитория index.html.</div>
+          <div id="list-code-index"></div>
+        </div>
+
+        <div class="admin-card">
+          <div class="section-label">Код — battle-admin-bot</div>
+          <div class="admin-empty" style="text-align:left; padding:0 0 8px;">Ежедневный zip-снимок исходников репозитория battle-admin-bot.</div>
+          <div id="list-code-admin"></div>
+        </div>
+
+        <div class="admin-card">
+          <div class="section-label">База данных</div>
+          <div class="admin-empty" style="text-align:left; padding:0 0 8px;">Ежедневный экспорт всей Firebase RTDB (zolotaya-kletka) в JSON.</div>
+          <div id="list-db"></div>
+        </div>
       </div>
 
-      <div class="admin-card" id="gh-token-requests-card" style="display:none;">
-        <div class="section-label">Заявки на изменение токена</div>
-        <div class="admin-empty" style="text-align:left; padding:0 0 10px;">Запросы на разблокировку токена с других устройств/браузеров. Подтверждай только те, что ты сам инициировал.</div>
-        <div id="gh-token-requests-list"></div>
-      </div>
+      <div id="backups-section-restore" style="display:none;">
+        <div class="warn-banner">
+          ⚠️ Восстановление — необратимое действие. Восстановление базы данных <b>полностью заменяет</b> текущую базу содержимым снимка. Восстановление кода <b>полностью заменяет</b> файлы репозитория состоянием на момент бэкапа — всё, что было добавлено после снимка, будет потеряно в этом репозитории. Дважды проверь дату перед подтверждением.
+        </div>
 
-      <div class="admin-card">
-        <div class="section-label">Сделать бэкап сейчас</div>
-        <div class="admin-empty" style="text-align:left; padding:0 0 10px;">Запускает оба workflow в battle-data-admin-bot немедленно (обычно они срабатывают раз в сутки по расписанию): свежий zip кода index.html и battle-admin-bot, свежий JSON всей базы. Снимок появится в списках ниже примерно через 1–2 минуты — тогда обнови страницу.</div>
-        <button class="btn btn-gold" id="backup-now-btn" style="width:100%;">Сделать бэкап сейчас</button>
-        <div class="status-line" id="backup-now-status"></div>
-      </div>
+        <div class="admin-card">
+          <div class="section-label">Восстановить базу данных</div>
+          <div class="admin-empty" style="text-align:left; padding:0 0 8px;">Пишет содержимое выбранного снимка прямо в Firebase RTDB (правила базы и так разрешают публичную запись — GitHub-токен для этого не нужен, только подтверждение ниже).</div>
+          <div class="row">
+            <select class="field-input" id="restore-db-select"></select>
+          </div>
+          <div class="row">
+            <input type="text" class="field-input" id="restore-db-confirm" placeholder="Впиши ВОССТАНОВИТЬ для подтверждения">
+            <button class="btn btn-live" id="restore-db-btn">Восстановить базу</button>
+          </div>
+          <div class="status-line" id="restore-db-status"></div>
+        </div>
 
-      <div class="admin-card">
-        <div class="section-label">Код — index.html</div>
-        <div class="admin-empty" style="text-align:left; padding:0 0 8px;">Ежедневный zip-снимок исходников репозитория index.html.</div>
-        <div id="list-code-index"></div>
-      </div>
-
-      <div class="admin-card">
-        <div class="section-label">Код — battle-admin-bot</div>
-        <div class="admin-empty" style="text-align:left; padding:0 0 8px;">Ежедневный zip-снимок исходников репозитория battle-admin-bot.</div>
-        <div id="list-code-admin"></div>
-      </div>
-
-      <div class="admin-card">
-        <div class="section-label">База данных</div>
-        <div class="admin-empty" style="text-align:left; padding:0 0 8px;">Ежедневный экспорт всей Firebase RTDB (zolotaya-kletka) в JSON.</div>
-        <div id="list-db"></div>
+        <div class="admin-card">
+          <div class="section-label">Восстановить код</div>
+          <div class="admin-empty" style="text-align:left; padding:0 0 8px;">Требует GitHub-токен выше — заменяет файлы выбранного репозитория его состоянием на дату снимка одним коммитом в main.</div>
+          <div class="row">
+            <select class="field-input" id="restore-code-repo">
+              <option value="index.html">index.html</option>
+              <option value="battle-admin-bot">battle-admin-bot</option>
+            </select>
+            <select class="field-input" id="restore-code-select"></select>
+          </div>
+          <div class="row">
+            <input type="text" class="field-input" id="restore-code-confirm" placeholder="Впиши ВОССТАНОВИТЬ для подтверждения">
+            <button class="btn btn-live" id="restore-code-btn">Восстановить код</button>
+          </div>
+          <div class="status-line" id="restore-code-status"></div>
+        </div>
       </div>
     </div>
 
-    <div class="subview" data-panel="restore" id="panel-restore">
-      <div class="warn-banner">
-        ⚠️ Восстановление — необратимое действие. Восстановление базы данных <b>полностью заменяет</b> текущую базу содержимым снимка. Восстановление кода <b>полностью заменяет</b> файлы репозитория состоянием на момент бэкапа — всё, что было добавлено после снимка, будет потеряно в этом репозитории. Дважды проверь дату перед подтверждением.
-      </div>
+    <!-- ===== "Система" — объединяет "Опасную зону" (сброс перед
+         бета-тестом, обслуживание, закрытый бета-тест, аварийный режим —
+         название вкладки нарочно нейтральное) и "База данных" (сырой
+         просмотр всей Firebase RTDB деревом). Суб-нав, см.
+         showDangerSection(). Вкладка видна всем, у кого есть хоть одно из
+         двух прав — canManageDanger() (делегируемое право "danger") или
+         canManageRoles() (superadmin, для "База данных").
 
-      <div class="admin-card">
-        <div class="section-label">Восстановить базу данных</div>
-        <div class="admin-empty" style="text-align:left; padding:0 0 8px;">Пишет содержимое выбранного снимка прямо в Firebase RTDB (правила базы и так разрешают публичную запись — GitHub-токен для этого не нужен, только подтверждение ниже).</div>
-        <div class="row">
-          <select class="field-input" id="restore-db-select"></select>
-        </div>
-        <div class="row">
-          <input type="text" class="field-input" id="restore-db-confirm" placeholder="Впиши ВОССТАНОВИТЬ для подтверждения">
-          <button class="btn btn-live" id="restore-db-btn">Восстановить базу</button>
-        </div>
-        <div class="status-line" id="restore-db-status"></div>
-      </div>
-
-      <div class="admin-card">
-        <div class="section-label">Восстановить код</div>
-        <div class="admin-empty" style="text-align:left; padding:0 0 8px;">Требует GitHub-токен выше — заменяет файлы выбранного репозитория его состоянием на дату снимка одним коммитом в main.</div>
-        <div class="row">
-          <select class="field-input" id="restore-code-repo">
-            <option value="index.html">index.html</option>
-            <option value="battle-admin-bot">battle-admin-bot</option>
-          </select>
-          <select class="field-input" id="restore-code-select"></select>
-        </div>
-        <div class="row">
-          <input type="text" class="field-input" id="restore-code-confirm" placeholder="Впиши ВОССТАНОВИТЬ для подтверждения">
-          <button class="btn btn-live" id="restore-code-btn">Восстановить код</button>
-        </div>
-        <div class="status-line" id="restore-code-status"></div>
-      </div>
-    </div>
-
-    <!-- ===== "Система" — сброс перед бета-тестом, обслуживание, закрытый
-         бета-тест и аварийный режим, название вкладки нарочно нейтральное.
-         Видят её все, у кого вообще есть доступ к панели (moderator/admin/
-         superadmin) — но воспользоваться получится только у тех, у кого
+         "Опасная зона": воспользоваться получится только у тех, у кого
          включено делегируемое право "danger" (см. canManageDanger,
          applyRoleUI). Право проверяется заново живым запросом к базе при
          КАЖДОМ открытии вкладки (см. openDangerZone в JS), а не один раз
          при входе в панель — так если право/роль сменили, пока вкладка
          панели просто лежала открытой, старый доступ не сохранится.
 
-         Два самых необратимых/критических действия — полный сброс истории
-         и аварийный режим — НЕ делегируются вообще, несмотря на "danger":
-         они дополнительно жёстко требуют role === 'superadmin' (см.
-         guard на кнопках btn-danger-reset/toggle-emergency ниже) — у
+         Два самых необратимых/критических действия внутри неё — полный
+         сброс истории и аварийный режим — НЕ делегируются вообще, несмотря
+         на "danger": они дополнительно жёстко требуют role === 'superadmin'
+         (см. guard на кнопках btn-danger-reset/toggle-emergency ниже) — у
          делегированного admin с включённым "danger" эти два блока либо
          скрыты, либо показывают явное сообщение вместо органов управления.
 
@@ -852,9 +884,31 @@
          (config/resetSecret). Задать/сменить его можно прямо здесь, в
          панели (форма "Задать новый пароль" ниже). Пароль одноразовый:
          после каждого УСПЕШНОГО сброса он автоматически стирается из базы
-         вместе с остальными данными. -->
+         вместе с остальными данными.
+
+         "База данных": верхний уровень получаем дёшево через REST
+         ?shallow=true (просто список ключей, без выкачивания всей базы
+         разом); открытая ветка потом уже живая — db.ref(path).on('value')
+         — и при реальном изменении внутри неё коротко подсвечивается
+         зелёным (см. renderDbNode/diffDbValues в JS). Один запрос на ветку
+         верхнего уровня, а не десятки. Доступ только superadmin
+         (canManageRoles) — не делегируется, как и "Бэкапы": здесь виден
+         буквально весь контент базы, включая привязанные email
+         (emailLogins). Кнопка суб-нава скрыта не-superadmin (см.
+         applyRoleUI), а живые слушатели веток отключаются и при уходе на
+         другую вкладку целиком (см. диспетчер кликов по .tab), и при
+         переключении на секцию "Опасная зона" внутри этой же вкладки (см.
+         showDangerSection) — не тянуть трафик за экраном, которого никто
+         не видит, ровно тот же принцип, что был у отдельной вкладки. -->
 
     <div class="subview" data-panel="danger" id="panel-danger">
+
+      <div class="subnav">
+        <button class="btn btn-gold" id="danger-sub-zone">Опасная зона</button>
+        <button class="btn btn-line" id="danger-sub-db" style="display:none;">База данных</button>
+      </div>
+
+      <div id="danger-section-zone">
 
       <div class="center-msg" id="danger-checking" style="min-height:30vh;">
         <div class="big">Проверяем доступ…</div>
@@ -1003,6 +1057,15 @@
               <div class="toggle-label">Включён</div>
             </div>
           </div>
+        </div>
+      </div>
+
+      </div>
+
+      <div id="danger-section-db" style="display:none;">
+        <div class="section-label">Firebase RTDB — дерево, живое обновление</div>
+        <div class="admin-card" style="padding:10px 12px;">
+          <div id="db-tree-root" class="db-tree"><div class="admin-empty">Загрузка…</div></div>
         </div>
       </div>
 
@@ -1310,26 +1373,84 @@
       tab.classList.add('active');
       document.querySelectorAll('[data-panel]').forEach(p => p.classList.remove('active'));
       document.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.add('active');
-      // ушли с "База" на другую вкладку — снимаем все живые слушатели веток,
-      // незачем продолжать тянуть трафик за экраном, который никто не видит
-      if (tab.dataset.tab !== 'database') detachAllDbLiveBranches();
+      // ушли с "Системы" (которая теперь включает "База данных") на другую
+      // вкладку — снимаем все живые слушатели веток, незачем продолжать
+      // тянуть трафик за экраном, который никто не видит
+      if (tab.dataset.tab !== 'danger') detachAllDbLiveBranches();
       // "Администрация" держит свой живой db.ref('users').on('value') только
       // пока вкладка открыта — снимаем его при уходе на любую другую вкладку,
-      // как и с живыми ветками "База" выше.
+      // как и с живыми ветками "База данных" выше.
       if (tab.dataset.tab !== 'admins') detachAdminsLiveListener();
-      if (tab.dataset.tab === 'logs') openAllLogs();
-      if (tab.dataset.tab === 'errors') loadErrorReports();
+      if (tab.dataset.tab === 'logs') showLogsSection('actions');
       if (tab.dataset.tab === 'event') loadEventsAdminList();
-      if (tab.dataset.tab === 'clans') loadClansAdminPanel();
-      if (tab.dataset.tab === 'beta') loadBetaApplicationsPanel();
-      if (tab.dataset.tab === 'database') loadDatabaseTree();
+      if (tab.dataset.tab === 'beta') showBetaSection(canManageBeta() ? 'beta' : 'clans');
       if (tab.dataset.tab === 'admins') loadAdminsTab();
       if (tab.dataset.tab === 'stats') loadStatsTab();
-      if (tab.dataset.tab === 'backups' || tab.dataset.tab === 'restore') loadAllBackupLists();
-      if (tab.dataset.tab === 'danger') openDangerZone();
+      if (tab.dataset.tab === 'backups') { showBackupsSection('list'); loadAllBackupLists(); }
+      if (tab.dataset.tab === 'danger') { showDangerSection('zone'); openDangerZone(); }
       if (tab.dataset.tab === 'account') db.ref('users/' + myTelegramId).once('value').then((s) => renderAccountTab(s.val() || {}));
     });
   });
+
+  // ===== суб-навы объединённых вкладок (см. CLAUDE.md/PR-описание задачи
+  // "merge related tabs") — переключают, какая из двух секций внутри
+  // одной .subview видна, и подгружают/освобождают контент этой секции.
+  // Активная кнопка — btn-gold, неактивная — btn-line (см. .subnav в CSS).
+  function showLogsSection(section) {
+    const isActions = section === 'actions';
+    document.getElementById('logs-sub-actions').className = 'btn ' + (isActions ? 'btn-gold' : 'btn-line');
+    document.getElementById('logs-sub-errors').className = 'btn ' + (!isActions ? 'btn-gold' : 'btn-line');
+    document.getElementById('logs-section-actions').style.display = isActions ? 'block' : 'none';
+    document.getElementById('logs-section-errors').style.display = isActions ? 'none' : 'block';
+    if (isActions) openAllLogs(); else loadErrorReports();
+  }
+  document.getElementById('logs-sub-actions').addEventListener('click', () => showLogsSection('actions'));
+  document.getElementById('logs-sub-errors').addEventListener('click', () => showLogsSection('errors'));
+
+  // "Заявки на бета" — своё право beta; "Заявки кланов" — своё право clans;
+  // каждая секция сама решает, грузить ли данные, а не полагается только на
+  // то, что вкладка/кнопка видна (та же защита "на случай подделки клика
+  // мимо скрытого UI", что и везде в этом файле).
+  function showBetaSection(section) {
+    const isBeta = section === 'beta';
+    document.getElementById('beta-sub-beta').className = 'btn ' + (isBeta ? 'btn-gold' : 'btn-line');
+    document.getElementById('beta-sub-clans').className = 'btn ' + (!isBeta ? 'btn-gold' : 'btn-line');
+    document.getElementById('beta-section-beta').style.display = isBeta ? 'block' : 'none';
+    document.getElementById('beta-section-clans').style.display = isBeta ? 'none' : 'block';
+    if (isBeta) { if (canManageBeta()) loadBetaApplicationsPanel(); }
+    else { if (canManageClans()) loadClansAdminPanel(); }
+  }
+  document.getElementById('beta-sub-beta').addEventListener('click', () => showBetaSection('beta'));
+  document.getElementById('beta-sub-clans').addEventListener('click', () => showBetaSection('clans'));
+
+  function showBackupsSection(section) {
+    const isList = section === 'list';
+    document.getElementById('backups-sub-list').className = 'btn ' + (isList ? 'btn-gold' : 'btn-line');
+    document.getElementById('backups-sub-restore').className = 'btn ' + (!isList ? 'btn-gold' : 'btn-line');
+    document.getElementById('backups-section-list').style.display = isList ? 'block' : 'none';
+    document.getElementById('backups-section-restore').style.display = isList ? 'none' : 'block';
+  }
+  document.getElementById('backups-sub-list').addEventListener('click', () => showBackupsSection('list'));
+  document.getElementById('backups-sub-restore').addEventListener('click', () => showBackupsSection('restore'));
+
+  // "База данных" — только superadmin (canManageRoles), её кнопка суб-нава
+  // и так скрыта не-superadmin (см. applyRoleUI), но loadDatabaseTree()
+  // всё равно сам себя перепроверяет на случай подделки клика. Уходя с этой
+  // секции (внутри той же вкладки "Система") снимаем живые слушатели веток
+  // — тот же принцип "не тянуть трафик за скрытым экраном", что и раньше у
+  // отдельной вкладки "База"; при возврате loadDatabaseTree() переподключит
+  // то, что было развёрнуто (см. openPaths там же).
+  function showDangerSection(section) {
+    const isZone = section === 'zone';
+    document.getElementById('danger-sub-zone').className = 'btn ' + (isZone ? 'btn-gold' : 'btn-line');
+    document.getElementById('danger-sub-db').className = 'btn ' + (!isZone ? 'btn-gold' : 'btn-line');
+    document.getElementById('danger-section-zone').style.display = isZone ? 'block' : 'none';
+    document.getElementById('danger-section-db').style.display = isZone ? 'none' : 'block';
+    if (isZone) { detachAllDbLiveBranches(); }
+    else if (canManageRoles()) { loadDatabaseTree(); }
+  }
+  document.getElementById('danger-sub-zone').addEventListener('click', () => showDangerSection('zone'));
+  document.getElementById('danger-sub-db').addEventListener('click', () => showDangerSection('db'));
 
   // ===== список пользователей =====
   const userListWrap = document.getElementById('user-list-wrap');
@@ -1616,27 +1737,36 @@
   function applyRoleUI() {
     const eventTab = document.querySelector('.tab[data-tab="event"]');
     if (eventTab) eventTab.style.display = canManageEvent() ? '' : 'none';
-    const clansTab = document.querySelector('.tab[data-tab="clans"]');
-    if (clansTab) clansTab.style.display = canManageClans() ? '' : 'none';
+    // "Заявки" — объединяет "Заявки на бета" (право beta) и "Заявки кланов"
+    // (право clans, бывшая отдельная вкладка "Кланы"). Вкладка видна, если
+    // есть хоть одно из двух прав (объединение) — каждая внутренняя секция
+    // и кнопка суб-нава по-прежнему подчиняется своему исходному условию,
+    // так что доступ к самому контенту не расширяется этим объединением.
     const betaTab = document.querySelector('.tab[data-tab="beta"]');
-    if (betaTab) betaTab.style.display = canManageBeta() ? '' : 'none';
-    // "База" — сырой доступ буквально ко всей базе (включая emailLogins
-    // с почтами игроков) — только superadmin, без промежуточных прав
-    const databaseTab = document.querySelector('.tab[data-tab="database"]');
-    if (databaseTab) databaseTab.style.display = canManageRoles() ? '' : 'none';
-    // "Администрация" — сводная таблица прав, тоже только superadmin, как и "База".
+    if (betaTab) betaTab.style.display = (canManageBeta() || canManageClans()) ? '' : 'none';
+    const betaSubBetaBtn = document.getElementById('beta-sub-beta');
+    if (betaSubBetaBtn) betaSubBetaBtn.style.display = canManageBeta() ? '' : 'none';
+    const betaSubClansBtn = document.getElementById('beta-sub-clans');
+    if (betaSubClansBtn) betaSubClansBtn.style.display = canManageClans() ? '' : 'none';
+    // "Администрация" — сводная таблица прав, только superadmin.
     const adminsTab = document.querySelector('.tab[data-tab="admins"]');
     if (adminsTab) adminsTab.style.display = canManageRoles() ? '' : 'none';
-    // "Бэкапы"/"Восстановление" — как и "База", не делегируется, только
-    // superadmin (см. CLAUDE.md этого репозитория и battle-data-admin-bot).
+    // "Бэкапы" — объединяет список/бэкап-сейчас и восстановление, обе части
+    // не делегируются, только superadmin (см. CLAUDE.md этого репозитория и
+    // battle-data-admin-bot) — объединение вкладок не меняет эффективный доступ.
     const backupsTab = document.querySelector('.tab[data-tab="backups"]');
     if (backupsTab) backupsTab.style.display = canManageRoles() ? '' : 'none';
-    const restoreTab = document.querySelector('.tab[data-tab="restore"]');
-    if (restoreTab) restoreTab.style.display = canManageRoles() ? '' : 'none';
-    // "Система" — делегируемое право (canManageDanger), см. комментарий
-    // там же и у PERMISSION_DEFS.
+    // "Система" — объединяет "Опасную зону" (делегируемое право danger, см.
+    // PERMISSION_DEFS) и "База данных" (сырой доступ буквально ко всей базе,
+    // включая emailLogins с почтами игроков — только superadmin, без
+    // промежуточных прав, как раньше у отдельной вкладки "База"). Вкладка
+    // видна, если есть хоть одно из двух прав; кнопка "База данных"
+    // суб-нава скрыта не-superadmin, а сама секция и её loadDatabaseTree()
+    // дополнительно самопроверяются на случай подделки клика.
     const dangerTab = document.querySelector('.tab[data-tab="danger"]');
-    if (dangerTab) dangerTab.style.display = canManageDanger() ? '' : 'none';
+    if (dangerTab) dangerTab.style.display = (canManageDanger() || canManageRoles()) ? '' : 'none';
+    const dangerSubDbBtn = document.getElementById('danger-sub-db');
+    if (dangerSubDbBtn) dangerSubDbBtn.style.display = canManageRoles() ? '' : 'none';
     // "Статистика" — отчёт "только для чтения", виден всем, у кого вообще
     // есть доступ к панели (moderator/admin/superadmin), без отдельного
     // переключаемого права — намеренно не трогаем её display здесь.
